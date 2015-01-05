@@ -1,0 +1,11 @@
+bin_PROGRAMS = rlogger rloggerd
+rlogger_SOURCES = rlogger.c common.c
+rlogger_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
+rloggerd_SOURCES = rloggerd.c common.c buffer.c
+rloggerd_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
+rloggerd_LDFLAGS = -pthread
+sbin_PROGRAMS = rlogd
+rlogd_SOURCES = rlogd.c common.c in_forward.c out_file.c out_forward.c buffer.c
+rlogd_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
+rlogd_LDFLAGS = -pthread
+EXTRA_DIST = README.md
