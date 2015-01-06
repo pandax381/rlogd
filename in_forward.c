@@ -40,6 +40,8 @@ struct context {
     struct module *module;
     struct {
         char *bind;
+        char *user;
+        int mode;
         int limit;
     } env;
     struct ev_loop *loop;
@@ -201,6 +203,7 @@ int
 in_forward_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
     int soc;
+    char *val;
 
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
@@ -220,6 +223,27 @@ in_forward_setup (struct module *module, struct dir *dir) {
         fprintf(stderr, "setup_server_socket: error\n");
         free(ctx);
         return -1;
+    }
+    if (strncmp(ctx->env.bind, "unix://", 7) == 0) {
+        ctx->env.user = config_dir_get_param_value(dir, "user");
+        val = config_dir_get_param_value(dir, "mode");
+        if (val) {
+            ctx->env.mode = strtol(val, NULL, 8);
+            if (ctx->env.mode == -1) {
+                fprintf(stderr, "'mode' value is invalid\n");
+                close(soc);
+                free(ctx);
+                return -1;
+            }
+        } else {
+            ctx->env.mode = DEFAULT_SOCKET_MODE;
+        }
+        if (chownmod(ctx->env.bind + 7, ctx->env.user, ctx->env.mode) == -1) {
+            fprintf(stderr, "chownmod: error\n");
+            close(soc);
+            free(ctx);
+            return -1;
+        }
     }
     ctx->loop = ev_loop_new(0);
     if (!ctx->loop) {
