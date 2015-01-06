@@ -555,7 +555,7 @@ option_parse (option_t *dst, int argc, char *argv[]) {
         {"conf",       1, NULL, 'c'},
         {"debug",      0, NULL, 'd'},
         {"foreground", 0, NULL, 'F'},
-        {"pid",        0, NULL, 'p'},
+        {"pid",        1, NULL, 'p'},
         {"help",       0, NULL, 'h'},
         {"version",    0, NULL, 'v'},
         { NULL,        0, NULL,  0 }
