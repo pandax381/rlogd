@@ -28,6 +28,7 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/stat.h>
 
 #ifndef container_of
 #define container_of(ptr, type, member) ({ \
@@ -161,5 +162,7 @@ extern ssize_t
 writevn (int fd, struct iovec *iov, size_t n);
 extern int
 daemonize (const char *dir, int noclose);
+extern int
+chownmod (const char *path, const char *user, mode_t mode);
 
 #endif

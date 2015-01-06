@@ -35,6 +35,8 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/stat.h>
+#include <pwd.h>
+#include <uuid/uuid.h>
 #include "common.h"
 
 void
@@ -443,6 +445,33 @@ daemonize (const char *dir, int noclose) {
         dup2(fd, STDERR_FILENO);
         if (fd > STDERR_FILENO) {
             close(fd);
+        }
+    }
+    return 0;
+}
+
+int
+chownmod (const char *path, const char *user, mode_t mode) {
+    struct passwd *p;
+
+    if (chmod(path, mode) == -1) {
+        perror("chmod");
+        return -1;
+    }
+    if (user) {
+        errno = 0;
+        p = getpwnam(user);
+        if (!p) {
+            if (errno) {
+                perror("getpwnam");
+            } else {
+                fprintf(stderr, "getpwnam: not found");
+            }
+            return -1;
+        }
+        if (chown(path, p->pw_uid, p->pw_gid) == -1) {
+            perror("chown");
+            return -1;
         }
     }
     return 0;

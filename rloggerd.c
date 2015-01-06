@@ -54,6 +54,8 @@ struct opts {
     int flush;
     char *listen;
     char *target;
+    char *user;
+    int mode;
 };
 
 struct context {
@@ -309,6 +311,8 @@ usage (void) {
     printf("    -d, --debug         # debug mode\n");
     printf("    -l, --listen=ADDR   # listen address (default: %s)\n", DEFAULT_LISTEN_ADDR);
     printf("    -t, --target=TARGET # target address (default: %s)\n", DEFAULT_TARGET_ADDR);
+    printf("    -u, --user=USER     # socket file owner\n");
+    printf("    -m, --mode=MODE     # socket file permission (default: %o)\n", DEFAULT_SOCKET_MODE);
     printf("    -b, --buffer=PATH   # file buffer directory path (default: %s)\n", DEFAULT_BUFFER);
     printf("    -c, --chunk=SIZE    # maximum length of the chunk (default: %d)\n", DEFAULT_CHUNK);
     printf("    -f, --flush=TIME    # time to flush the chunk (default: %d)\n", DEFAULT_FLUSH);
@@ -328,6 +332,8 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
         {"debug",   0, NULL, 'd'},
         {"listen",  1, NULL, 'l'},
         {"target",  1, NULL, 't'},
+        {"user",    1, NULL, 'u'},
+        {"mode",    1, NULL, 'm'},
         {"buffer",  1, NULL, 'b'},
         {"chunk",   1, NULL, 'c'},
         {"flush",   1, NULL, 'f'},
@@ -339,10 +345,12 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
     memset(opts, 0, sizeof(struct opts));
     opts->listen = DEFAULT_LISTEN_ADDR;
     opts->target = DEFAULT_TARGET_ADDR;
+    opts->user = NULL;
+    opts->mode = DEFAULT_SOCKET_MODE;
     opts->buffer = DEFAULT_BUFFER;
     opts->chunk = DEFAULT_CHUNK;
     opts->flush = DEFAULT_FLUSH;
-    while ((opt = getopt_long_only(argc, argv, "dl:t:b:c:f:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long_only(argc, argv, "dl:u:m:t:b:c:f:", long_options, NULL)) != -1) {
         switch (opt) {
         case 'd':
             opts->debug = 1;
@@ -352,6 +360,16 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
             break;
         case 't':
             opts->target = optarg;
+            break;
+        case 'u':
+            opts->user = optarg;
+            break;
+        case 'm':
+            opts->mode = strtol(optarg, NULL, 8);
+            if (opts->mode == -1) {
+                usage();
+                return -1;
+            }
             break;
         case 'b':
             opts->buffer = optarg;
@@ -430,6 +448,13 @@ main (int argc, char *argv[]) {
     if (soc == -1) {
         terminate(&ctx);
         return -1;
+    }
+    if (strncmp(opts.listen, "unix://", 7) == 0) {
+        if (chownmod(opts.listen + 7, opts.user, opts.mode) == -1) {
+            close(soc);
+            terminate(&ctx);
+            return -1;
+        }
     }
     loop = ev_loop_new(0);
     ctx.listen.w.data = &ctx;
