@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <time.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <ev.h>
 #include "config.h"
 #include "common.h"
@@ -45,6 +46,7 @@
 typedef struct {
     int debug;
     char *target;
+    int timeout;
     int limit;
     int interval;
     struct string tag;
@@ -226,8 +228,67 @@ terminate (struct context *ctx) {
     free(ctx->rbuf.data);
 }
 
+static void
+on_timeout (struct ev_loop *loop, struct ev_timer *w, int revents) {
+    struct context *ctx;
+
+    ctx = (struct context *)w->data;
+    if (ctx->fd == -1) {
+        return;
+    }
+    close(ctx->fd);
+    ctx->fd = -1;
+    ev_timer_stop(loop, w);
+    ev_break(loop, EVBREAK_ALL);
+    fprintf(stderr, "Connection timed out\n");
+}
+
+static void
+on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
+    struct context *ctx;
+    socklen_t errlen;
+    int err, opt;
+
+    ctx = (struct context *)w->data;
+    if (ctx->fd == -1) {
+        return;
+    }
+    errlen = sizeof(err);
+    if (getsockopt(w->fd, SOL_SOCKET, SO_ERROR, &err, &errlen) == -1) {
+        fprintf(stderr, "getsockpot: %s\n", strerror(errno));
+        close(w->fd);
+        ev_io_stop(loop, w);
+        ctx->fd = -1;
+        ev_break(loop, EVBREAK_ALL);
+        return;
+    }
+    if (err) {
+        fprintf(stderr, "connect: %s\n", strerror(err));
+        close(w->fd);
+        ev_io_stop(loop, w);
+        ctx->fd = -1;
+        ev_break(loop, EVBREAK_ALL);
+        return;
+    }
+    opt = 0;
+    if (ioctl(w->fd, FIONBIO, &opt) == -1) {
+        perror("ioctl [FIONBIO]");
+        close(w->fd);
+        ev_io_stop(loop, w);
+        ctx->fd = -1;
+        ev_break(loop, EVBREAK_ALL);
+        return;
+    }
+    fprintf(stderr, "Connection Established: soc=%d\n", w->fd);
+    ev_break(loop, EVBREAK_ALL);
+}
+
 static int
 init (struct context *ctx) {
+    struct ev_loop *loop;
+    struct ev_io connect_w;
+    struct ev_timer timeout_w;
+
     sig_ignore(SIGPIPE);
     if (buf_init(&ctx->rbuf, RBUF_SIZ) == -1) {
         return -1;
@@ -236,11 +297,27 @@ init (struct context *ctx) {
         free(ctx->rbuf.data);
         return -1;
     }
-    ctx->fd = setup_client_socket(ctx->option.target, 0);
+    ctx->fd = setup_client_socket(ctx->option.target, ctx->option.timeout ? 1 : 0);
     if (ctx->fd == -1) {
         free(ctx->sbuf.data);
         free(ctx->rbuf.data);
         return -1;
+    }
+    if (ctx->option.timeout) {
+        loop = ev_loop_new(0);
+        connect_w.data = ctx;
+        ev_io_init(&connect_w, on_connect, ctx->fd, EV_WRITE);
+        ev_io_start(loop, &connect_w);
+        timeout_w.data = ctx;
+        ev_timer_init(&timeout_w, on_timeout, ctx->option.timeout, 0.0);
+        ev_timer_start(loop, &timeout_w);
+        ev_run(loop, 0);
+        ev_loop_destroy(loop);
+        if (ctx->fd == -1) {
+            free(ctx->sbuf.data);
+            free(ctx->rbuf.data);
+            return -1;
+        }
     }
     return 0;
 }
@@ -251,6 +328,7 @@ usage (void) {
     printf("  options:\n");
     printf("    -d, --debug         # debug mode\n");
     printf("    -t, --target=TARGET # target (default: %s)\n", DEFAULT_TARGET);
+    printf("    -T, --timeout=SEC   # connection timeout sec (default: system default)\n");
     printf("    -c, --chunk=SIZE    # maximum length of the chunk (default: %d)\n", DEFAULT_LIMIT);
     printf("    -f, --flush=TIME    # time to flush the chunk (default: %d)\n", DEFAULT_INTERVAL);
     printf("        --help          # show this message\n");
@@ -268,6 +346,7 @@ option_parse (option_t *dst, int argc, char *argv[]) {
     struct option long_options[] = {
         {"debug",   0, NULL, 'd'},
         {"target",  1, NULL, 't'},
+        {"timeout", 1, NULL, 'T'},
         {"chunk",   1, NULL, 'c'},
         {"flush",   1, NULL, 'f'},
         {"help",    0, NULL,  2 },
@@ -277,17 +356,25 @@ option_parse (option_t *dst, int argc, char *argv[]) {
 
     dst->debug = 0;
     dst->target = DEFAULT_TARGET;
+    dst->timeout = 0;
     dst->limit = DEFAULT_LIMIT;
     dst->interval = DEFAULT_INTERVAL;
     dst->tag.text = DEFAULT_TAG;
     dst->tag.len = strlen(dst->tag.text);
-    while ((opt = getopt_long_only(argc, argv, "dt:c:f:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long_only(argc, argv, "dt:T:c:f:", long_options, NULL)) != -1) {
         switch (opt) {
         case 'd':
             dst->debug = 1;
             break;
         case 't':
             dst->target = optarg;
+            break;
+        case 'T':
+            dst->timeout = strtol(optarg, NULL, 10);
+            if (dst->timeout == -1) {
+                usage();
+                return -1;
+            }
             break;
         case 'c':
             dst->limit = strtol(optarg, NULL, 10);
