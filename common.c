@@ -36,7 +36,6 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <pwd.h>
-#include <uuid/uuid.h>
 #include "common.h"
 
 void
