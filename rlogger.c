@@ -144,7 +144,7 @@ on_stdin_read (struct ev_loop *loop, struct ev_io *w, int revents) {
             }
             perror("read");
         }
-        ev_unloop(loop, EVUNLOOP_ALL);
+        ev_break(loop, EVBREAK_ALL);
         return;
     }
     ctx->rbuf.len += n;
@@ -156,7 +156,7 @@ on_stdin_read (struct ev_loop *loop, struct ev_io *w, int revents) {
         } else {
             if (on_message(ctx, &tstamp, s, e - s) == -1) {
                 ctx->broken = 1;
-                ev_unloop(loop, EVUNLOOP_ALL);
+                ev_break(loop, EVBREAK_ALL);
                 return;
             }
         }
@@ -165,7 +165,7 @@ on_stdin_read (struct ev_loop *loop, struct ev_io *w, int revents) {
     if (!ctx->option.interval && !buf_empty(&ctx->rbuf)) {
         if (on_flush(ctx) == -1) {
             ctx->broken = 1;
-            ev_unloop(loop, EVUNLOOP_ALL);
+            ev_break(loop, EVBREAK_ALL);
             return;
         }
     }
@@ -188,7 +188,7 @@ on_socket_read (struct ev_loop *loop, struct ev_io *w, int revents) {
             perror("read");
         }
         ctx->broken = 1;
-        ev_unloop(loop, EVUNLOOP_ALL);
+        ev_break(loop, EVBREAK_ALL);
         return;
     }
     fprintf(stderr, "unknown '%zu' bytes data receive via socket.\n", n);
@@ -208,7 +208,7 @@ on_timer (struct ev_loop *loop, struct ev_timer *w, int revents) {
     if (diff.tv_sec > (time_t)ctx->option.interval) {
         if (on_flush(ctx) == -1) {
             ctx->broken = 1;
-            ev_unloop(loop, EVUNLOOP_ALL);
+            ev_break(loop, EVBREAK_ALL);
         }
     }
 }
@@ -216,7 +216,7 @@ on_timer (struct ev_loop *loop, struct ev_timer *w, int revents) {
 static void
 on_signal (struct ev_loop *loop, struct ev_signal *w, int revents) {
     fprintf(stderr, "receive signal: signum=%d\n", w->signum);
-    ev_unloop(loop, EVUNLOOP_ALL);
+    ev_break(loop, EVBREAK_ALL);
 }
 
 static void
@@ -358,7 +358,7 @@ main (int argc, char *argv[]) {
         ev_signal_init(&s->w, on_signal, s->signum);
         ev_signal_start(loop, &s->w);
     }
-    ev_loop(loop, 0);
+    ev_run(loop, 0);
     if (ctx.broken) {
         ev_loop_destroy(loop);
         terminate(&ctx);

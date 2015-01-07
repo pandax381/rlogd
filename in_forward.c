@@ -81,7 +81,7 @@ run (void *arg) {
     struct e_context *e;
 
     ctx = (struct context *)arg;
-    ev_loop(ctx->loop, 0);
+    ev_run(ctx->loop, 0);
     close(ctx->w.fd);
     while ((e = LIST_FIRST(&ctx->head)) != NULL) {
         LIST_REMOVE(e, lp);
@@ -99,7 +99,7 @@ run (void *arg) {
 
 static void
 on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
-    ev_unloop(loop, EVBREAK_ALL);
+    ev_break(loop, EVBREAK_ALL);
 }
 
 static int

@@ -308,7 +308,7 @@ static void
 signal_cb (struct ev_loop *loop, struct ev_signal *w, int revents) {
     (void)revents;
     fprintf(stderr, "Receive Signal: signum=%d\n", w->signum);
-    ev_unloop(loop, EVBREAK_ALL);
+    ev_break(loop, EVBREAK_ALL);
 }
 
 static int
@@ -635,7 +635,7 @@ main (int argc, char *argv[]) {
         return -1;
     }
     run_modules();
-    ev_loop(loop, 0);
+    ev_run(loop, 0);
     ev_loop_destroy(loop);
     cancel_modules();
     config_free(&config);

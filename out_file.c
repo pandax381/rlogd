@@ -123,7 +123,7 @@ run (void *arg) {
     struct context *ctx;
 
     ctx = (struct context *)arg;
-    ev_loop(ctx->loop, 0);
+    ev_run(ctx->loop, 0);
     if (ctx->fd != -1) {
         close(ctx->fd);
     }
@@ -134,7 +134,7 @@ run (void *arg) {
 
 static void
 on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
-    ev_unloop(loop, EVBREAK_ALL);
+    ev_break(loop, EVBREAK_ALL);
 }
 
 int

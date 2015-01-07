@@ -205,7 +205,7 @@ on_signal (struct ev_loop *loop, struct ev_signal *w, int revents) {
     fprintf(stderr, "receive signal: signum=%d\n", w->signum);
     ctx = (struct context *)w->data;
     ctx->terminate = 1;
-    ev_unloop(loop, EVBREAK_ALL);
+    ev_break(loop, EVBREAK_ALL);
 }
 
 static void
@@ -218,7 +218,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
 
     ctx = (struct context *)w->data;
     if (ctx->terminate) {
-        ev_unloop(loop, EVUNLOOP_ALL);
+        ev_break(loop, EVBREAK_ALL);
         return;
     }
     snprintf(path, sizeof(path), "%s/%s.%d", ctx->opts->buffer, BUFFER_FILE_NAME, ctx->buffer.cursor->r);
@@ -263,7 +263,7 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
 
     ctx = (struct context *)w->data;
     if (ctx->terminate) {
-        ev_unloop(loop, EVUNLOOP_ALL);
+        ev_break(loop, EVBREAK_ALL);
         return;
     }
     soc = setup_client_socket(ctx->opts->target, 0);
@@ -299,7 +299,7 @@ thread_main (void *arg) {
         ev_io_start(loop, &ctx->connect.w);
         fprintf(stderr, "Connection Established: soc=%d\n", soc);
     }
-    ev_loop(loop, 0);
+    ev_run(loop, 0);
     ev_loop_destroy(loop);
     return NULL;
 }
@@ -469,7 +469,7 @@ main (int argc, char *argv[]) {
         ev_signal_start(loop, &s->w);
     }
     pthread_create(&thread, NULL, thread_main, &ctx);
-    ev_loop(loop, 0);
+    ev_run(loop, 0);
     pthread_join(thread, NULL);
     close(soc);
     terminate(&ctx);

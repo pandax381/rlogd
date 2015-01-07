@@ -90,7 +90,7 @@ run (void *arg) {
     struct context *ctx;
 
     ctx = (struct context *)arg;
-    ev_loop(ctx->loop, 0);
+    ev_run(ctx->loop, 0);
     close(ctx->w.fd);
     ev_loop_destroy(ctx->loop);
     buffer_terminate(&ctx->buffer);
@@ -111,7 +111,7 @@ on_feed (struct ev_loop *loop, struct ev_async *w, int revents) {
 
 static void
 on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
-    ev_unloop(loop, EVBREAK_ALL);
+    ev_break(loop, EVBREAK_ALL);
 }
 
 static void
@@ -224,7 +224,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
 
     ctx = (struct context *)w->data;
     if (ctx->terminate) {
-        ev_unloop(loop, EVUNLOOP_ALL);
+        ev_break(loop, EVBREAK_ALL);
         return;
     }
     snprintf(path, sizeof(path), "%s/%s.%d", ctx->env.buffer, BUFFER_FILE_NAME, ctx->buffer.cursor->r);
