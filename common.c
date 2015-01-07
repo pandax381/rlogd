@@ -154,7 +154,7 @@ tvadd (struct timeval *a, struct timeval *b) {
 }
 
 int
-setup_client_socket (const char *address, int nonblock) {
+setup_client_socket (const char *address, const char *default_port, int nonblock) {
     char *addr, *port;
     int fd;
 
@@ -163,7 +163,13 @@ setup_client_socket (const char *address, int nonblock) {
     } else {
         addr = strdup(address);
         port = strrchr(addr, ':');
-        if (port) {
+        if (!port) {
+            if (!default_port) {
+                free(addr);
+                return -1;
+            }
+            port = (char *)default_port;
+        } else {
             *port++ = '\0';
         }
         fd = setup_tcp_client_socket(addr, port, nonblock);
@@ -244,7 +250,7 @@ setup_tcp_client_socket (const char *host, const char *port, int nonblock) {
 }
 
 int
-setup_server_socket (const char *address, int backlog, int nonblock) {
+setup_server_socket (const char *address, const char *default_port, int backlog, int nonblock) {
     char *addr, *port;
     int fd;
 
@@ -253,7 +259,13 @@ setup_server_socket (const char *address, int backlog, int nonblock) {
     } else {
         addr = strdup(address);
         port = strrchr(addr, ':');
-        if (port) {
+        if (!port) {
+            if (!default_port) {
+                free(addr);
+                return -1;
+            }
+            port = (char *)default_port;
+        } else {
             *port++ = '\0';
         }
         fd = setup_tcp_server_socket(addr, port, backlog, nonblock);

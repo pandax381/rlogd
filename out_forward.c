@@ -338,7 +338,7 @@ reconnect (struct ev_loop *loop, struct ev_timer *w, int revents) {
     struct context *ctx;
 
     ctx = (struct context *)w->data;
-    ctx->fd = setup_client_socket(ctx->env.target, 1);
+    ctx->fd = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
     if (ctx->fd == -1) {
         // reconnect next timer tick
         return;
@@ -384,7 +384,7 @@ out_forward_setup (struct module *module, struct dir *dir) {
         free(ctx);
         return -1;
     }
-    ctx->fd = setup_client_socket(ctx->env.target, 1);
+    ctx->fd = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
     if (ctx->fd != -1) {
         ev_io_init(&ctx->w, on_connect, ctx->fd, EV_WRITE);
         ev_io_start(ctx->loop, &ctx->w);

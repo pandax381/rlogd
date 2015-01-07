@@ -57,6 +57,8 @@ struct entry {
 #define DEFAULT_FLUSH_INTERVAL (5)
 
 #define DEFAULT_SOCKET_MODE (0666)
+#define DEFAULT_RLOGD_PORT "10381"
+#define DEFAULT_RLOGGERD_PORT "10382"
 #define DEFAULT_RLOGD_SOCKET "unix:///var/run/rlogd/rlogd.sock"
 #define DEFAULT_RLOGGERD_SOCKET "unix:///var/run/rlogd/rloggerd.sock"
 

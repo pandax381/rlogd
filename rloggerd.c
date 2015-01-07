@@ -266,7 +266,7 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
         ev_break(loop, EVBREAK_ALL);
         return;
     }
-    soc = setup_client_socket(ctx->opts->target, 0);
+    soc = setup_client_socket(ctx->opts->target, DEFAULT_RLOGD_PORT, 0);
     if (soc == -1) {
         ev_timer_set(w, 3.0, 0.0);
         ev_timer_start(loop, w);
@@ -291,7 +291,7 @@ thread_main (void *arg) {
     ctx->connect.w.data = ctx;
     ctx->connect.retry_w.data = ctx;
     ev_timer_init(&ctx->connect.retry_w, on_retry, 3.0, 0.0);
-    soc = setup_client_socket(ctx->opts->target, 0);
+    soc = setup_client_socket(ctx->opts->target, DEFAULT_RLOGD_PORT, 0);
     if (soc == -1) {
         ev_timer_start(loop, &ctx->connect.retry_w);
     } else {
@@ -444,7 +444,7 @@ main (int argc, char *argv[]) {
         fprintf(stderr, "buffer_init: failure\n");
         return -1;
     }
-    soc = setup_server_socket(opts.listen, SOMAXCONN, 0);
+    soc = setup_server_socket(opts.listen, DEFAULT_RLOGGERD_PORT, SOMAXCONN, 0);
     if (soc == -1) {
         terminate(&ctx);
         return -1;

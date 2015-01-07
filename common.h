@@ -145,13 +145,13 @@ tvsub (struct timeval *a, struct timeval *b, struct timeval *c);
 extern struct timeval *
 tvadd (struct timeval *a, struct timeval *b);
 extern int
-setup_client_socket (const char *address, int nonblock);
+setup_client_socket (const char *address, const char *default_port, int nonblock);
 extern int
 setup_unix_client_socket (const char *path, int nonblock);
 extern int
 setup_tcp_client_socket (const char *host, const char *port, int nonblock);
 extern int
-setup_server_socket (const char *address, int backlog, int nonblock);
+setup_server_socket (const char *address, const char *default_port, int backlog, int nonblock);
 extern int
 setup_unix_server_socket (const char *path, int backlog, int nonblock);
 extern int

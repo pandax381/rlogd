@@ -297,7 +297,7 @@ init (struct context *ctx) {
         free(ctx->rbuf.data);
         return -1;
     }
-    ctx->fd = setup_client_socket(ctx->option.target, ctx->option.timeout ? 1 : 0);
+    ctx->fd = setup_client_socket(ctx->option.target, DEFAULT_RLOGGERD_PORT, ctx->option.timeout ? 1 : 0);
     if (ctx->fd == -1) {
         free(ctx->sbuf.data);
         free(ctx->rbuf.data);

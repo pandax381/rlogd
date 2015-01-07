@@ -218,7 +218,7 @@ in_forward_setup (struct module *module, struct dir *dir) {
         return -1;
     }
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
-    soc = setup_server_socket(ctx->env.bind, SOMAXCONN, 0);
+    soc = setup_server_socket(ctx->env.bind, DEFAULT_RLOGD_PORT, SOMAXCONN, 0);
     if (soc == -1) {
         fprintf(stderr, "setup_server_socket: error\n");
         free(ctx);
