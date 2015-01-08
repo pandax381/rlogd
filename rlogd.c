@@ -60,6 +60,7 @@ static struct signal_def signals[] = {
 
 struct source {
     struct module ctx;
+    char *label;
     char *prefix;
     char *suffix;
     pthread_t thread;
@@ -72,6 +73,12 @@ struct match {
     pthread_t thread;
     pthread_mutex_t mutex;
     TAILQ_ENTRY(match) lp;
+};
+
+struct label {
+    regex_t reg;
+    TAILQ_HEAD(/**/, match) matches;
+    TAILQ_ENTRY(label) lp;
 };
 
 #define MODULE_TYPE_INPUT  (1)
@@ -103,12 +110,14 @@ static struct module_def modules[] = {
 
 TAILQ_HEAD(/**/, source) sources = TAILQ_HEAD_INITIALIZER(sources);
 TAILQ_HEAD(/**/, match)  matches = TAILQ_HEAD_INITIALIZER(matches);
+TAILQ_HEAD(/**/, label)  labels  = TAILQ_HEAD_INITIALIZER(labels);
 
 void
 push_entries (struct module *module, const char *tag, size_t tag_len, struct entry *entries, size_t len) {
     struct source *source;
     char buf[1024];
     size_t n = 0;
+    struct label *label;
     struct match *match;
 
     source = container_of(module, struct source, ctx);
@@ -128,6 +137,24 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
     } else {
         buf[n] = '\0';
     }
+    if (source->label) {
+        TAILQ_FOREACH(label, &labels, lp) {
+            if (regexec(&label->reg, source->label, 0, NULL, 0) == 0) {
+                TAILQ_FOREACH(match, &label->matches, lp) {
+                    if (regexec(&match->reg, buf, 0, NULL, 0) == 0) {
+                        pthread_mutex_lock(&match->mutex);
+                        match->ctx.emit(match->ctx.arg, buf, n, entries, len);
+                        pthread_mutex_unlock(&match->mutex);
+                        return;
+                    }
+                }
+                fprintf(stderr, "'%.*s' is not match\n", (int)tag_len, tag);
+                return;
+            }
+        }
+        fprintf(stderr, "label '%s' is not found\n", source->label);
+        return;
+    }
     TAILQ_FOREACH(match, &matches, lp) {
         if (regexec(&match->reg, buf, 0, NULL, 0) == 0) {
             pthread_mutex_lock(&match->mutex);
@@ -143,6 +170,7 @@ void
 cancel_modules (void) {
     struct source *source;
     struct match *match;
+    struct label *label;
 
     while ((source = TAILQ_FIRST(&sources)) != NULL) {
         source->ctx.cancel(source->ctx.arg);
@@ -157,13 +185,31 @@ cancel_modules (void) {
         regfree(&match->reg);
         free(match);
     }
+    while ((label = TAILQ_FIRST(&labels)) != NULL) {
+        while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
+            match->ctx.cancel(match->ctx.arg);
+            pthread_join(match->thread, NULL);
+            TAILQ_REMOVE(&matches, match, lp);
+            regfree(&match->reg);
+            free(match);
+        }
+        TAILQ_REMOVE(&labels, label, lp);
+        regfree(&label->reg);
+        free(label);
+    }
 }
 
 void
 run_modules (void) {
-    struct source *source;
+    struct label *label;
     struct match *match;
+    struct source *source;
 
+    TAILQ_FOREACH(label, &labels, lp) {
+        TAILQ_FOREACH(match, &label->matches, lp) {
+            pthread_create(&match->thread, NULL, match->ctx.run, match->ctx.arg);
+        }
+    }
     TAILQ_FOREACH(match, &matches, lp) {
         pthread_create(&match->thread, NULL, match->ctx.run, match->ctx.arg);
     }
@@ -176,6 +222,7 @@ static void
 revoke_modules (void) {
     struct source *source;
     struct match *match;
+    struct label *label;
 
     while ((source = TAILQ_FIRST(&sources)) != NULL) {
         source->ctx.revoke(source->ctx.arg);
@@ -187,6 +234,17 @@ revoke_modules (void) {
         TAILQ_REMOVE(&matches, match, lp);
         regfree(&match->reg);
         free(match);
+    }
+    while ((label = TAILQ_FIRST(&labels)) != NULL) {
+        while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
+            match->ctx.revoke(match->ctx.arg);
+            TAILQ_REMOVE(&matches, match, lp);
+            regfree(&match->reg);
+            free(match);
+        }
+        TAILQ_REMOVE(&labels, label, lp);
+        regfree(&label->reg);
+        free(label);
     }
 }
 
@@ -228,6 +286,7 @@ setup_source (struct dir *dir) {
         free(source);
         return NULL;
     }
+    source->label  = config_dir_get_param_value(dir, "label");
     source->prefix = config_dir_get_param_value(dir, "add_prefix");
     source->suffix = config_dir_get_param_value(dir, "add_suffix");
     return source;
@@ -277,11 +336,55 @@ setup_match (struct dir *dir) {
     return match;
 }
 
+static struct label *
+setup_label (struct dir *dir) {
+    struct label *label;
+    int err;
+    char errmsg[1024];
+    struct dir *child;
+    struct match *match;
+
+    if (!dir->arg) {
+        fprintf(stderr, "pattern is required\n");
+        return NULL;
+    }
+    label = (struct label *)malloc(sizeof(struct label));
+    if (!label) {
+        fprintf(stderr, "malloc error\n");
+        return NULL;
+    }
+    TAILQ_INIT(&label->matches);
+    memset(&label->reg, 0, sizeof(label->reg));
+    if ((err = regcomp(&label->reg, dir->arg, REG_EXTENDED | REG_NOSUB)) != 0) {
+        regerror(err, &label->reg, errmsg, sizeof(errmsg));
+        fprintf(stderr, "regcomp: %s\n", errmsg);
+        free(label);
+        return NULL;
+    }
+    TAILQ_FOREACH(child, &dir->dirs, lp) {
+        if (strcmp(child->name, "match") == 0) {
+            if ((match = setup_match(child)) == NULL) {
+                while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
+                    match->ctx.revoke(match->ctx.arg);
+                    TAILQ_REMOVE(&label->matches, match, lp);
+                    regfree(&match->reg);
+                    free(match);
+                }
+                regfree(&label->reg);
+                free(label);
+                return NULL;
+            }
+            TAILQ_INSERT_TAIL(&label->matches, match, lp);
+        }
+    }
+    return label;
+}
 static int
 setup_modules (struct config *config) {
     struct dir *dir;
     struct source *source;
     struct match *match;
+    struct label *label;
 
     TAILQ_FOREACH(dir, &config->dirs, lp) {
         if (strcmp(dir->name, "source") == 0) {
@@ -299,6 +402,15 @@ setup_modules (struct config *config) {
                 return -1;
             }
             TAILQ_INSERT_TAIL(&matches, match, lp);
+        }
+    }
+    TAILQ_FOREACH(dir, &config->dirs, lp) {
+        if (strcmp(dir->name, "label") == 0) {
+            if ((label = setup_label(dir)) == NULL) {
+                revoke_modules();
+                return -1;
+            }
+            TAILQ_INSERT_TAIL(&labels, label, lp);
         }
     }
     return 0;
