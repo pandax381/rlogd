@@ -191,7 +191,7 @@ on_timer (struct ev_loop *loop, struct ev_timer *w, int revents) {
     }
     gettimeofday(&now, NULL);
     tvsub(&now, &ctx->buffer.tstamp, &diff);
-    if (diff.tv_sec > (time_t)ctx->opts->flush) {
+    if (diff.tv_sec >= (time_t)ctx->opts->flush) {
         if (buffer_flush(&ctx->buffer) == -1) {
             // TODO
         }
