@@ -14,7 +14,7 @@ Reliable LOG Daemon
     $ make
     $ sudo make install
 
-Note: This program requires libev.
+Note: This program requires libev and libpcre.
 
 Note: This program has been tested with Linux (kernel 3.2.0) and Mac OSX (10.9.5)
 
