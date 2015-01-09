@@ -24,6 +24,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -31,6 +32,7 @@
 #include <sys/stat.h>
 #include <sys/queue.h>
 #include <ev.h>
+#include <pcre.h>
 #include "config.h"
 #include "common.h"
 #include "rlogd.h"
@@ -69,14 +71,14 @@ struct source {
 
 struct match {
     struct module ctx;
-    regex_t reg;
+    pcre *reg;
     pthread_t thread;
     pthread_mutex_t mutex;
     TAILQ_ENTRY(match) lp;
 };
 
 struct label {
-    regex_t reg;
+    pcre *reg;
     TAILQ_HEAD(/**/, match) matches;
     TAILQ_ENTRY(label) lp;
 };
@@ -139,9 +141,9 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
     }
     if (source->label) {
         TAILQ_FOREACH(label, &labels, lp) {
-            if (regexec(&label->reg, source->label, 0, NULL, 0) == 0) {
+            if (pcre_exec(label->reg, NULL, source->label, strlen(source->label), 0, 0, 0, 0) >= 0) {
                 TAILQ_FOREACH(match, &label->matches, lp) {
-                    if (regexec(&match->reg, buf, 0, NULL, 0) == 0) {
+                    if (pcre_exec(match->reg, NULL, buf, strlen(buf), 0, 0, 0, 0) >= 0) {
                         pthread_mutex_lock(&match->mutex);
                         match->ctx.emit(match->ctx.arg, buf, n, entries, len);
                         pthread_mutex_unlock(&match->mutex);
@@ -156,7 +158,7 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
         return;
     }
     TAILQ_FOREACH(match, &matches, lp) {
-        if (regexec(&match->reg, buf, 0, NULL, 0) == 0) {
+        if (pcre_exec(match->reg, NULL, buf, strlen(buf), 0, 0, 0, 0) >= 0) {
             pthread_mutex_lock(&match->mutex);
             match->ctx.emit(match->ctx.arg, buf, n, entries, len);
             pthread_mutex_unlock(&match->mutex);
@@ -182,7 +184,7 @@ cancel_modules (void) {
         match->ctx.cancel(match->ctx.arg);
         pthread_join(match->thread, NULL);
         TAILQ_REMOVE(&matches, match, lp);
-        regfree(&match->reg);
+        pcre_free(match->reg);
         free(match);
     }
     while ((label = TAILQ_FIRST(&labels)) != NULL) {
@@ -190,11 +192,11 @@ cancel_modules (void) {
             match->ctx.cancel(match->ctx.arg);
             pthread_join(match->thread, NULL);
             TAILQ_REMOVE(&matches, match, lp);
-            regfree(&match->reg);
+            pcre_free(match->reg);
             free(match);
         }
         TAILQ_REMOVE(&labels, label, lp);
-        regfree(&label->reg);
+        pcre_free(label->reg);
         free(label);
     }
 }
@@ -232,18 +234,18 @@ revoke_modules (void) {
     while ((match = TAILQ_FIRST(&matches)) != NULL) {
         match->ctx.revoke(match->ctx.arg);
         TAILQ_REMOVE(&matches, match, lp);
-        regfree(&match->reg);
+        pcre_free(match->reg);
         free(match);
     }
     while ((label = TAILQ_FIRST(&labels)) != NULL) {
         while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
             match->ctx.revoke(match->ctx.arg);
             TAILQ_REMOVE(&matches, match, lp);
-            regfree(&match->reg);
+            pcre_free(match->reg);
             free(match);
         }
         TAILQ_REMOVE(&labels, label, lp);
-        regfree(&label->reg);
+        pcre_free(label->reg);
         free(label);
     }
 }
@@ -292,13 +294,90 @@ setup_source (struct dir *dir) {
     return source;
 }
 
+static char *
+convert_regex_pattern (char *dst, size_t size, const char *src, size_t len) {
+    size_t n = 0, off = 0;
+    int esc = 0, dot = 0;
+
+    dst[off++] = '\\';
+    dst[off++] = 'A';
+    while (n < len) {
+        if (esc) {
+            dst[off++] = '\\';
+            dst[off++] = src[n];
+            esc = 0;
+            n++;
+            continue;
+        }
+        if (src[n] == '*' && src[n + 1] == '*') {
+            if (dot) {
+                dst[off++] = '(';
+                dst[off++] = '?';
+                dst[off++] = '!';
+                dst[off++] = '[';
+                dst[off++] = '^';
+                dst[off++] = '\\';
+                dst[off++] = '.';
+                dst[off++] = ']';
+                dst[off++] = ')';
+                dot = 0;
+            }
+            if (src[n + 2] == '.') {
+                dst[off++] = '(';
+                dst[off++] = '?';
+                dst[off++] = ':';
+                dst[off++] = '.';
+                dst[off++] = '*';
+                dst[off++] = '\\';
+                dst[off++] = '.';
+                dst[off++] = '|';
+                dst[off++] = '\\';
+                dst[off++] = 'A';
+                dst[off++] = ')';
+                n += 3;
+            } else {
+                dst[off++] = '.';
+                dst[off++] = '*';
+                n += 2;
+            }
+            continue;
+        }
+        if (dot) {
+            dst[off++] = '\\';
+            dst[off++] = '.';
+            dot = 0;
+        }
+        if (src[n] == '\\') {
+            esc = 1;
+        } else if (src[n] == '.') {
+            dot = 1;
+        } else if (src[n] == '*'){
+            dst[off++] = '[';
+            dst[off++] = '^';
+            dst[off++] = '\\';
+            dst[off++] = '.';
+            dst[off++] = ']';
+            dst[off++] = '*';
+        } else if (!(isalnum(src[n]) || src[n] == '_')) {
+            dst[off++] = '\\';
+        } else {
+            dst[off++] = src[n];
+        }
+        n++;
+    }
+    dst[off++] = '\\';
+    dst[off++] = 'Z';
+    dst[off] = '\0';
+    return dst;
+}
+
 static struct match *
 setup_match (struct dir *dir) {
-    char *type;
+    char *type, pattern[1024];
     struct module_def *module;
     struct match *match;
-    int err;
-    char errmsg[1024];
+    const char *errmsg;
+    int erroff;
 
     if (!dir->arg) {
         fprintf(stderr, "pattern is required\n");
@@ -320,15 +399,16 @@ setup_match (struct dir *dir) {
         return NULL;
     }
     memset(&match->reg, 0, sizeof(match->reg));
-    if ((err = regcomp(&match->reg, dir->arg, REG_EXTENDED | REG_NOSUB)) != 0) {
-        regerror(err, &match->reg, errmsg, sizeof(errmsg));
-        fprintf(stderr, "regcomp: %s\n", errmsg);
+    convert_regex_pattern(pattern, sizeof(pattern), dir->arg, strlen(dir->arg));
+    match->reg = pcre_compile(pattern, 0, &errmsg, &erroff, NULL);
+    if (!match->reg) {
+        fprintf(stderr, "pcre_compile: %s\n", errmsg);
         free(match);
         return NULL;
     }
     if (module->setup(&match->ctx, dir) == -1) {
         fprintf(stderr, "output module '%s' setup error\n", type);
-        regfree(&match->reg);
+        pcre_free(match->reg);
         free(match);
         return NULL;
     }
@@ -339,8 +419,9 @@ setup_match (struct dir *dir) {
 static struct label *
 setup_label (struct dir *dir) {
     struct label *label;
-    int err;
-    char errmsg[1024];
+    char pattern[1024];
+    const char *errmsg;
+    int erroff;
     struct dir *child;
     struct match *match;
 
@@ -355,9 +436,10 @@ setup_label (struct dir *dir) {
     }
     TAILQ_INIT(&label->matches);
     memset(&label->reg, 0, sizeof(label->reg));
-    if ((err = regcomp(&label->reg, dir->arg, REG_EXTENDED | REG_NOSUB)) != 0) {
-        regerror(err, &label->reg, errmsg, sizeof(errmsg));
-        fprintf(stderr, "regcomp: %s\n", errmsg);
+    convert_regex_pattern(pattern, sizeof(pattern), dir->arg, strlen(dir->arg));
+    label->reg = pcre_compile(pattern, 0, &errmsg, &erroff, NULL);
+    if (!label->reg) {
+        fprintf(stderr, "pcre_compile: %s\n", errmsg);
         free(label);
         return NULL;
     }
@@ -367,10 +449,10 @@ setup_label (struct dir *dir) {
                 while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
                     match->ctx.revoke(match->ctx.arg);
                     TAILQ_REMOVE(&label->matches, match, lp);
-                    regfree(&match->reg);
+                    pcre_free(match->reg);
                     free(match);
                 }
-                regfree(&label->reg);
+                pcre_free(label->reg);
                 free(label);
                 return NULL;
             }

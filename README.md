@@ -65,29 +65,29 @@ Note: This program has been tested with Linux (kernel 3.2.0) and Mac OSX (10.9.5
         type forward
         bind unix:///var/run/rlogd/rlogd.sock
     </source>
-    
+
     <source>
         type forward
         bind 0.0.0.0:10381
         label forwarded
     </source>
 
-    <match ^example\.>
+    <match example.**>
         type forward
         target 127.0.0.1:10381
         buffer_path /var/run/rlogd/buf/
     </match>
-    
-    <label ^forwarded$>
-        <match ^example\.acc\.>
+
+    <label forwarded>
+        <match example.acc.**>
             type file
             path /var/run/rlogd/logs/example/%Y-%m-%d/acc_%H%M.log
         </match>
-        <match ^example\.err\.>
+        <match example.err.**>
             type file
             path /var/run/rlogd/logs/example/%Y-%m-%d/err_%H%M.log
         </match>
-        <match ^example\.app\.>
+        <match example.app.**>
             type file
             path /var/run/rlogd/logs/example/%Y-%m-%d/app_%H%M.log
         </match>

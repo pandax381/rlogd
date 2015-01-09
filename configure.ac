@@ -53,5 +53,26 @@ AC_ARG_ENABLE(libev-static,
 )
 AC_CHECK_HEADER(ev.h,,[AC_MSG_ERROR([not found ev.h])])
 
+# Checks for libpcre
+LIBPCREPATH="/usr"
+AC_ARG_WITH(libpcre,
+AC_HELP_STRING([--with-pcre=PATH],[path to pcre installation]),
+  [
+    LIBPCREPATH="$withval"
+    LDFLAGS="-L$LIBPCREPATH/lib -Wl,-rpath -Wl,$LIBPCREPATH/lib $LDFLAGS"
+    CPPFLAGS="-I$LIBPCREPATH/include $CPPFLAGS"
+  ]
+)
+AC_ARG_ENABLE(libpcre-static,
+  AC_HELP_STRING([--enable-libpcre-static],[libpcre static link]),
+  [
+    LIBS="$LIBS $LIBPCREPATH/lib/libpcre.a"
+  ],
+  [
+    LIBS="$LIBS -lpcre"
+  ]
+)
+AC_CHECK_HEADER(pcre.h,,[AC_MSG_ERROR([not found pcre.h])])
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
