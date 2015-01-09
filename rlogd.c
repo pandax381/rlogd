@@ -303,8 +303,32 @@ convert_regex_pattern (char *dst, size_t size, const char *src, size_t len) {
     dst[off++] = 'A';
     while (n < len) {
         if (esc) {
-            dst[off++] = '\\';
-            dst[off++] = src[n];
+            switch (src[n]) {
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case '(':
+            case ')':
+            case '|':
+            case '-':
+            case '*':
+            case '.':
+            case '\\':
+            case '?':
+            case '+':
+            case '^':
+            case '$':
+            case '#':
+            case '\t':
+            case '\f':
+            case '\v':
+            case '\n':
+            case '\r':
+                dst[off++] = '\\';
+            default:
+                dst[off++] = src[n];
+            }
             esc = 0;
             n++;
             continue;
