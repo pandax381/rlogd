@@ -320,6 +320,7 @@ convert_regex_pattern (char *dst, size_t size, const char *src, size_t len) {
             case '^':
             case '$':
             case '#':
+            case ' ':
             case '\t':
             case '\f':
             case '\v':
