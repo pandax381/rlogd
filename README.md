@@ -55,8 +55,8 @@ Note: This program has been tested with Linux (kernel 3.2.0) and Mac OSX (10.9.5
         -T, --timeout=SEC   # connection timeout sec (default: system default)
         -c, --chunk=SIZE    # maximum length of the chunk (default: 8388608)
         -f, --flush=TIME    # time to flush the chunk (default: 5)
-        --help          # show this message
-        --version       # show version
+            --help          # show this message
+            --version       # show version
 
 ## Config file
 
