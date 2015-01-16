@@ -1,11 +1,20 @@
-bin_PROGRAMS = rlogger rloggerd
-rlogger_SOURCES = rlogger.c common.c
-rlogger_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
-rloggerd_SOURCES = rloggerd.c common.c buffer.c
-rloggerd_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
-rloggerd_LDFLAGS = -pthread
+ACLOCAL_AMFLAGS = -I m4
+
+AM_CPPFLAGS = $(AM_CPPFLAGS) $(PTHREAD_CFLAGS)
+AM_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
+
+bin_PROGRAMS  = rlogger rloggerd
 sbin_PROGRAMS = rlogd
-rlogd_SOURCES = rlogd.c common.c in_forward.c out_file.c out_forward.c buffer.c
-rlogd_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
-rlogd_LDFLAGS = -pthread
-EXTRA_DIST = README.md
+
+rlogger_SOURCES = rlogger.c common.c
+rlogger_LDADD = $(LIBEV_LDADD)
+
+rloggerd_SOURCES = rloggerd.c common.c buffer.c
+rloggerd_LDADD = $(LIBEV_LDADD) $(PCRE_LDADD) $(PTHREAD_LIBS)
+
+rlogd_SOURCES = rlogd.c common.c buffer.c in_forward.c out_forward.c out_file.c
+rlogd_LDADD = $(LIBEV_LDADD) $(PCRE_LDADD) $(PTHREAD_LIBS)
+
+EXTRA_DIST = README.md LICENSE autogen.sh rlogd.conf.example
+
+MAINTAINERCLEANFILES = Makefile.in aclocal.m4 compile config.h.in config.h.in~ configure depcomp install-sh missing

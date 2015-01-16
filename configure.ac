@@ -6,11 +6,10 @@ AC_INIT([rlogd], [0.3.1], [https://github.com/pandax381/rlogd/issues/])
 AM_INIT_AUTOMAKE(foreign)
 AC_CONFIG_SRCDIR([rlogd.c])
 AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_MACRO_DIR([m4])
 
 # Checks for programs.
 AC_PROG_CC
-
-# Checks for libraries.
 
 # Checks for header files.
 AC_CHECK_HEADERS([arpa/inet.h fcntl.h limits.h netdb.h stddef.h stdint.h stdlib.h string.h sys/ioctl.h sys/socket.h sys/time.h unistd.h])
@@ -31,48 +30,37 @@ AC_FUNC_FORK
 AC_FUNC_MALLOC
 AC_FUNC_MMAP
 AC_CHECK_FUNCS([dup2 gettimeofday isascii localtime_r memchr memmove memset mkdir regcomp socket strchr strdup strerror strndup strpbrk strrchr strtol])
+AX_PTHREAD
 
 # Checks for libev
-LIBEVPATH="/usr"
-AC_ARG_WITH(libev,
-AC_HELP_STRING([--with-libev=PATH],[path to libev installation]),
-  [
-    LIBEVPATH="$withval"
-    LDFLAGS="-L$LIBEVPATH/lib -Wl,-rpath -Wl,$LIBEVPATH/lib $LDFLAGS"
-    CPPFLAGS="-I$LIBEVPATH/include $CPPFLAGS"
-  ]
-)
-AC_ARG_ENABLE(libev-static,
-  AC_HELP_STRING([--enable-libev-static],[libev static link]),
-  [
-    LIBS="$LIBS -lm $LIBEVPATH/lib/libev.a"
-  ],
-  [
-    LIBS="$LIBS -lev"
-  ]
-)
-AC_CHECK_HEADER(ev.h,,[AC_MSG_ERROR([not found ev.h])])
+AC_ARG_WITH([libev],[AC_HELP_STRING([--with-libev=DIR],[location of the libev installed directory])],[LIBEV_PATH="$withval"])
+if test "$LIBEV_PATH"; then
+    LDFLAGS="-L${LIBEV_PATH}/lib -Wl,-rpath,${LIBEV_PATH}/lib ${LDFLAGS}"
+    CPPFLAGS="-I${LIBEV_PATH}/include ${CPPFLAGS}"
+fi
+AC_CHECK_HEADER(ev.h,,[AC_MSG_ERROR([ev.h not found])])
+AC_ARG_ENABLE([libev-static],[AC_HELP_STRING([--enable-libev-static],[libev static link])],[LIBEV_STATIC="yes"])
+if test "$LIBEV_STATIC" = "yes"; then
+    LIBEV_LDADD="-lm ${LIBEV_PATH}/lib/libev.a"
+else
+    LIBEV_LDADD="-lev"
+fi
+AC_SUBST(LIBEV_LDADD)
 
 # Checks for libpcre
-LIBPCREPATH="/usr"
-AC_ARG_WITH(libpcre,
-AC_HELP_STRING([--with-pcre=PATH],[path to pcre installation]),
-  [
-    LIBPCREPATH="$withval"
-    LDFLAGS="-L$LIBPCREPATH/lib -Wl,-rpath -Wl,$LIBPCREPATH/lib $LDFLAGS"
-    CPPFLAGS="-I$LIBPCREPATH/include $CPPFLAGS"
-  ]
-)
-AC_ARG_ENABLE(libpcre-static,
-  AC_HELP_STRING([--enable-libpcre-static],[libpcre static link]),
-  [
-    LIBS="$LIBS $LIBPCREPATH/lib/libpcre.a"
-  ],
-  [
-    LIBS="$LIBS -lpcre"
-  ]
-)
-AC_CHECK_HEADER(pcre.h,,[AC_MSG_ERROR([not found pcre.h])])
+AC_ARG_WITH([libpcre],[AC_HELP_STRING([--with-pcre=DIR],[location of the libpcre installed directory])],[LIBPCRE_PATH="$withval"])
+if test "$LIBPCRE_PATH"; then
+    LDFLAGS="-L${LIBPCRE_PATH}/lib -Wl,-rpath,${LIBPCRE_PATH}/lib ${LDFLAGS}"
+    CPPFLAGS="-I${LIBPCRE_PATH}/include ${CPPFLAGS}"
+fi
+AC_CHECK_HEADER(pcre.h,,[AC_MSG_ERROR([pcre.h not found])])
+AC_ARG_ENABLE([libpcre-static],[AC_HELP_STRING([--enable-libpcre-static],[libpcre static link])],[LIBPCRE_STATIC="yes"])
+if test "$LIBPCRE_STATIC" = "yes"; then
+    PCRE_LDADD="-lm ${LIBPCRE_PATH}/lib/libpcre.a ${LIBS}"
+else
+    PCRE_LDADD="-lpcre ${LIBS}"
+fi
+AC_SUBST(PCRE_LDADD)
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
