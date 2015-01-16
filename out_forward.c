@@ -52,10 +52,11 @@ struct context {
         size_t limit;
         size_t interval;
     } env;
-    int fd;
     struct ev_loop *loop;
-    struct ev_io w;
-    struct ev_timer reconnect_w;
+    struct {
+        struct ev_io w;
+        struct ev_timer retry_w;
+    } connect;
     struct ev_timer flush_w;
     struct ev_async shutdown_w;
     struct ev_async feed_w;
@@ -74,7 +75,9 @@ _revoke (void *arg) {
     struct context *ctx;
 
     ctx = (struct context *)arg;
-    close(ctx->w.fd);
+    if (ctx->connect.w.fd != -1) {
+        close(ctx->connect.w.fd);
+    }
     ev_loop_destroy(ctx->loop);
     buffer_terminate(&ctx->buffer);
     free(ctx);
@@ -91,7 +94,9 @@ run (void *arg) {
 
     ctx = (struct context *)arg;
     ev_run(ctx->loop, 0);
-    close(ctx->w.fd);
+    if (ctx->connect.w.fd != -1) {
+        close(ctx->connect.w.fd);
+    }
     ev_loop_destroy(ctx->loop);
     buffer_terminate(&ctx->buffer);
     free(ctx);
@@ -103,9 +108,9 @@ on_feed (struct ev_loop *loop, struct ev_async *w, int revents) {
     struct context *ctx;
 
     ctx = (struct context *)w->data;
-    if (!ev_is_active(&ctx->reconnect_w) && ctx->w.fd != -1 && !ev_is_active(&ctx->w)) {
-        ev_io_start(loop, &ctx->w);
-        ev_feed_event(loop, &ctx->w, EV_CUSTOM);
+    if (!ev_is_active(&ctx->connect.retry_w) && ctx->connect.w.fd != -1 && !ev_is_active(&ctx->connect.w)) {
+        ev_io_start(loop, &ctx->connect.w);
+        ev_feed_event(loop, &ctx->connect.w, EV_CUSTOM);
     }
 }
 
@@ -154,7 +159,7 @@ wait_ack (struct context *ctx, uint32_t seq) {
     size_t done = 0;
     ssize_t n;
 
-    pfd.fd = ctx->w.fd;
+    pfd.fd = ctx->connect.w.fd;
     pfd.events = POLLIN;
     while (1) {
         if ((ret = poll(&pfd, 1, 1000)) <= 0) {
@@ -164,7 +169,7 @@ wait_ack (struct context *ctx, uint32_t seq) {
             perror("poll");
             return -1;
         }
-        n = recv(ctx->w.fd, (char *)&ack + done, sizeof(ack) - done, 0);
+        n = recv(pfd.fd, (char *)&ack + done, sizeof(ack) - done, 0);
         switch (n) {
         case -1:
             if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
@@ -262,16 +267,31 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
                     continue;
                 }
                 close(fd);
+                ev_io_stop(loop, w);
+                close(w->fd);
+                w->fd = -1;
+                ev_timer_start(loop, &ctx->connect.retry_w);
                 return;
             }
             if (n != (len - done)) {
                 fprintf(stderr, "_sendfile error: n=%zd, (len - done)=%zd\n", n, len - done);
                 close(fd);
+                ev_io_stop(loop, w);
+                close(w->fd);
+                w->fd = -1;
+                ev_timer_start(loop, &ctx->connect.retry_w);
                 return;
             }
             done += n;
         }
-        wait_ack(ctx, ntohl(hdr.seq));
+        if (wait_ack(ctx, ntohl(hdr.seq)) == -1) {
+            close(fd);
+            ev_io_stop(loop, w);
+            close(w->fd);
+            w->fd = -1;
+            ev_timer_start(loop, &ctx->connect.retry_w);
+            return;
+        }
         done = 0;
     }
     close(fd);
@@ -289,27 +309,27 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
     errlen = sizeof(err);
     if (getsockopt(w->fd, SOL_SOCKET, SO_ERROR, &err, &errlen) == -1) {
         fprintf(stderr, "getsockpot: %s\n", strerror(errno));
-        close(w->fd);
         ev_io_stop(loop, w);
-        ctx->fd = -1;
-        ev_timer_start(ctx->loop, &ctx->reconnect_w);
+        close(w->fd);
+        w->fd = -1;
+        ev_timer_start(ctx->loop, &ctx->connect.retry_w);
         return;
     }
     if (err) {
         fprintf(stderr, "connect: %s\n", strerror(err));
-        close(w->fd);
         ev_io_stop(loop, w);
-        ctx->fd = -1;
-        ev_timer_start(ctx->loop, &ctx->reconnect_w);
+        close(w->fd);
+        w->fd = -1;
+        ev_timer_start(ctx->loop, &ctx->connect.retry_w);
         return;
     }
     opt = 0;
     if (ioctl(w->fd, FIONBIO, &opt) == -1) {
         perror("ioctl [FIONBIO]");
-        close(w->fd);
         ev_io_stop(loop, w);
-        ctx->fd = -1;
-        ev_timer_start(ctx->loop, &ctx->reconnect_w);;
+        close(w->fd);
+        w->fd = -1;
+        ev_timer_start(ctx->loop, &ctx->connect.retry_w);;
     }
     ev_set_cb(w, on_write);
     fprintf(stderr, "Connection Established: soc=%d\n", w->fd);
@@ -334,23 +354,25 @@ on_flush (struct ev_loop *loop, struct ev_timer *w, int revents) {
 }
 
 static void
-reconnect (struct ev_loop *loop, struct ev_timer *w, int revents) {
+on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
     struct context *ctx;
+    int soc;
 
     ctx = (struct context *)w->data;
-    ctx->fd = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
-    if (ctx->fd == -1) {
-        // reconnect next timer tick
+    soc = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
+    if (soc == -1) {
+        // retry at next timer tick
         return;
     }
     ev_timer_stop(loop, w);
-    ev_io_init(&ctx->w, on_connect, ctx->fd, EV_WRITE);
-    ev_io_start(ctx->loop, &ctx->w);
+    ev_io_init(&ctx->connect.w, on_connect, soc, EV_WRITE);
+    ev_io_start(loop, &ctx->connect.w);
 }
 
 int
 out_forward_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
+    int soc;
 
     ctx = (struct context *)malloc(sizeof(struct context));
     if (!ctx) {
@@ -384,17 +406,15 @@ out_forward_setup (struct module *module, struct dir *dir) {
         free(ctx);
         return -1;
     }
-    ctx->fd = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
-    if (ctx->fd != -1) {
-        ev_io_init(&ctx->w, on_connect, ctx->fd, EV_WRITE);
-        ev_io_start(ctx->loop, &ctx->w);
-    }
-    ctx->w.data = ctx;
-    ctx->reconnect_w.data = ctx;
-    ev_timer_init(&ctx->reconnect_w, reconnect, 3.0, 3.0);
-    if (ctx->fd == -1) {
-        ev_timer_start(ctx->loop, &ctx->reconnect_w);
-    }
+    ctx->connect.w.data = ctx;
+    ctx->connect.retry_w.data = ctx;
+    ev_timer_init(&ctx->connect.retry_w, on_retry, 3.0, 3.0);
+    soc = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
+    if (soc == -1) {
+        ev_timer_start(ctx->loop, &ctx->connect.retry_w);
+    } 
+    ev_io_init(&ctx->connect.w, on_connect, soc, EV_WRITE);
+    ev_io_start(ctx->loop, &ctx->connect.w);
     ctx->flush_w.data = ctx;
     ev_timer_init(&ctx->flush_w, on_flush, 1.0, 1.0);
     ev_timer_start(ctx->loop, &ctx->flush_w);
