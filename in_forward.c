@@ -238,8 +238,8 @@ in_forward_setup (struct module *module, struct dir *dir) {
         } else {
             ctx->env.mode = DEFAULT_SOCKET_MODE;
         }
-        if (chownmod(ctx->env.bind + 7, ctx->env.user, ctx->env.mode) == -1) {
-            fprintf(stderr, "chownmod: error\n");
+        if (chperm(ctx->env.bind + 7, ctx->env.user, ctx->env.mode) == -1) {
+            fprintf(stderr, "chperm: error\n");
             close(soc);
             free(ctx);
             return -1;

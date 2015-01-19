@@ -462,7 +462,7 @@ daemonize (const char *dir, int noclose) {
 }
 
 int
-chownmod (const char *path, const char *user, mode_t mode) {
+chperm (const char *path, const char *user, mode_t mode) {
     struct passwd *p;
 
     if (chmod(path, mode) == -1) {

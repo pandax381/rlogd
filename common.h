@@ -163,6 +163,6 @@ writevn (int fd, struct iovec *iov, size_t n);
 extern int
 daemonize (const char *dir, int noclose);
 extern int
-chownmod (const char *path, const char *user, mode_t mode);
+chperm (const char *path, const char *user, mode_t mode);
 
 #endif

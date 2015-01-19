@@ -450,7 +450,7 @@ main (int argc, char *argv[]) {
         return -1;
     }
     if (strncmp(opts.listen, "unix://", 7) == 0) {
-        if (chownmod(opts.listen + 7, opts.user, opts.mode) == -1) {
+        if (chperm(opts.listen + 7, opts.user, opts.mode) == -1) {
             close(soc);
             terminate(&ctx);
             return -1;
