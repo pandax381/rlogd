@@ -19,6 +19,9 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +36,6 @@
 #include <sys/queue.h>
 #include <ev.h>
 #include <pcre.h>
-#include "config.h"
 #include "common.h"
 #include "rlogd.h"
 

@@ -19,6 +19,9 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -34,7 +37,6 @@
 #include <sys/socket.h>
 #include <pthread.h>
 #include <ev.h>
-#include "config.h"
 #include "common.h"
 #include "protocol.h"
 #include "buffer.h"

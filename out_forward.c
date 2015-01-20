@@ -19,6 +19,9 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -40,9 +43,9 @@
 #include <poll.h>
 #include <pthread.h>
 #include <ev.h>
-#include "common.h"
-#include "buffer.h"
 #include "rlogd.h"
+#include "buffer.h"
+#include "common.h"
 
 struct context {
     struct module *module;
