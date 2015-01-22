@@ -378,7 +378,10 @@ writen (int fd, const void *buf, size_t n) {
     while (done < n) {
         ret = write(fd, (caddr_t)buf + done, n - done);
         if (ret == -1) {
-            if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+            if (errno != EINTR) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    return (ssize_t)done;
+                }
                 perror("writen");
                 return -1;
             }
@@ -400,7 +403,10 @@ writevn (int fd, struct iovec *iov, size_t n) {
     while (done < total) {
         ret = writev(fd, iov, n);
         if (ret == -1) {
-            if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+            if (errno != EINTR) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    return done;
+                }
                 perror("writev");
                 return -1;
             }
