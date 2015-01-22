@@ -378,7 +378,7 @@ writen (int fd, const void *buf, size_t n) {
     while (done < n) {
         ret = write(fd, (caddr_t)buf + done, n - done);
         if (ret == -1) {
-            if (errno != EINTR) {
+            if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
                 perror("writen");
                 return -1;
             }
