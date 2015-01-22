@@ -400,7 +400,7 @@ writevn (int fd, struct iovec *iov, size_t n) {
     while (done < total) {
         ret = writev(fd, iov, n);
         if (ret == -1) {
-            if (errno != EINTR) {
+            if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
                 perror("writev");
                 return -1;
             }
