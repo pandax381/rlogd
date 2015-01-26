@@ -119,6 +119,7 @@ on_message (struct e_context *ctx, struct hdr *hdr) {
         ack.len = 0;
         n = writen(ctx->w.fd, &ack, sizeof(ack));
         if (n != sizeof(ack)) {
+            fprintf(stderr, "send ack error\n");
             return -1;
         }
     }
@@ -200,6 +201,7 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     ev_io_init(&ctx->w, on_read, soc, EV_READ);
     ev_io_start(loop, &ctx->w);
     LIST_INSERT_HEAD(&ctx->parent->head, ctx, lp);
+    fprintf(stderr, "in_forward: Accepted new connection, fd=%d\n", soc);
 }
 
 int
