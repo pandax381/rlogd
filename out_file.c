@@ -95,6 +95,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
                     return;
                 }
                 strcpy(ctx->current, path);
+                fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->current, ctx->fd);
             }
             ctx->timestamp = timestamp;
         }
