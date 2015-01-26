@@ -35,6 +35,7 @@
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <poll.h>
 #include <pthread.h>
 #include <ev.h>
 #include "common.h"
@@ -210,13 +211,81 @@ on_signal (struct ev_loop *loop, struct ev_signal *w, int revents) {
     ev_break(loop, EVBREAK_ALL);
 }
 
+static int
+wait_ack (struct context *ctx, uint32_t seq) {
+    int ret;
+    struct pollfd pfd;
+    struct hdr ack;
+    size_t done = 0;
+    ssize_t n;
+
+    pfd.fd = ctx->connect.w.fd;
+    pfd.events = POLLIN;
+    while (1) {
+        if ((ret = poll(&pfd, 1, 1000)) <= 0) {
+            if (ret == 0 || errno == EINTR) {
+                continue;
+            }
+            perror("poll");
+            return -1;
+        }
+        n = recv(pfd.fd, (char *)&ack + done, sizeof(ack) - done, 0);
+        switch (n) {
+        case -1:
+            if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
+                continue;
+            }
+            perror("recv");
+            return -1;
+        case  0:
+            fprintf(stderr, "WARNING: connection close.\n");
+            if (n) {
+                fprintf(stderr, "WARNING: unprocessed %zu bytes data.\n", done);
+            }
+            return -1;
+        }
+        done += n;
+        if (done < sizeof(ack)) {
+            continue;
+        }
+        if (ntohl(ack.seq) == seq) {
+            break;
+        }
+    }
+    return 0;
+}
+
+static ssize_t
+_sendfile (int out_fd, int in_fd, size_t count) {
+    char buf[65536];
+    ssize_t n, done = 0;
+
+    while (done < (ssize_t)count) {
+        n = read(in_fd, buf, MIN(sizeof(buf), (count - done)));
+        if (n <= 0) {
+            if (n) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                // TODO
+                perror("read");
+                return -1;
+            }
+            break;
+        }
+        writen(out_fd, buf, n);
+        done += n;
+    }
+    return done;
+}
+
 static void
 on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     struct context *ctx;
     char path[PATH_MAX];
     int fd;
-    char buf[65535];
-    ssize_t n;
+    struct hdr hdr;
+    ssize_t n, done = 0, len;
 
     ctx = (struct context *)w->data;
     if (ctx->terminate) {
@@ -232,26 +301,61 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     fprintf(stderr, "forward_buffer: %s\n", path);
     while (1) {
-        n = read(fd, buf, sizeof(buf));
+        n = read(fd, &hdr, sizeof(hdr) - done);
         if (n <= 0) {
             if (n) {
                 if (errno == EINTR) {
                     continue;
                 }
-                // TODO
+                perror("read");
+                close(fd);
                 return;
             }
             break;
         }
-        if (writen(w->fd, buf, n) == -1) {
+        done += n;
+        if (done < (ssize_t)sizeof(hdr)) {
+            continue;
+        }
+        writen(w->fd, &hdr, sizeof(hdr));
+        done = 0;
+        len = ntohl(hdr.len) - sizeof(hdr);
+        while (done < len) {
+            n = _sendfile(w->fd, fd, len - done);
+            if (n == -1) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                close(fd);
+                ev_io_stop(loop, w);
+                close(w->fd);
+                w->fd = -1;
+                ev_timer_set(&ctx->connect.retry_w, 3.0, 0.0);
+                ev_timer_start(loop, &ctx->connect.retry_w);
+                return;
+            }
+            if (n != (len - done)) {
+                fprintf(stderr, "_sendfile error: n=%zd, (len - done)=%zd\n", n, len - done);
+                close(fd);
+                ev_io_stop(loop, w);
+                close(w->fd);
+                w->fd = -1;
+                ev_timer_set(&ctx->connect.retry_w, 3.0, 0.0);
+                ev_timer_start(loop, &ctx->connect.retry_w);
+                return;
+            }
+            done += n;
+        }
+        if (wait_ack(ctx, ntohl(hdr.seq)) == -1) {
             close(fd);
-            close(w->fd);
             ev_io_stop(loop, w);
+            close(w->fd);
             w->fd = -1;
             ev_timer_set(&ctx->connect.retry_w, 3.0, 0.0);
             ev_timer_start(loop, &ctx->connect.retry_w);
             return;
         }
+        done = 0;
     }
     close(fd);
     ctx->buffer.cursor->r++;
