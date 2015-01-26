@@ -378,13 +378,14 @@ writen (int fd, const void *buf, size_t n) {
     while (done < n) {
         ret = write(fd, (caddr_t)buf + done, n - done);
         if (ret == -1) {
-            if (errno != EINTR) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    return (ssize_t)done;
-                }
-                perror("writen");
-                return -1;
+            if (errno == EINTR) {
+                continue;
             }
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return (ssize_t)done;
+            }
+            perror("writen");
+            return -1;
         } else {
             done += ret;
         }
@@ -392,25 +393,33 @@ writen (int fd, const void *buf, size_t n) {
     return (ssize_t)done;
 }
 
+size_t
+iovlen (const struct iovec *iov, size_t n) {
+    size_t len = 0;
+
+    while (n) {
+        len += iov[--n].iov_len;
+    }
+    return len;
+}
+
 ssize_t
 writevn (int fd, struct iovec *iov, size_t n) {
-    size_t i, total = 0, done = 0;
+    size_t total = 0, done = 0, i;
     ssize_t ret;
 
-    for (i = 0; i < n; i++) {
-        total += iov[i].iov_len;
-    }
+    total = iovlen(iov, n);
     while (done < total) {
         ret = writev(fd, iov, n);
         if (ret == -1) {
-            if (errno != EINTR) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                    return done;
-                }
-                perror("writev");
-                return -1;
+            if (errno == EINTR) {
+                continue;
             }
-            continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                return (ssize_t)done;
+            }
+            perror("writev");
+            return -1;
         }
         done += ret;
         for (i = 0; i < n; i++) {
@@ -423,7 +432,7 @@ writevn (int fd, struct iovec *iov, size_t n) {
             iov[i].iov_len = 0;
         }
     }
-    return done;
+    return (ssize_t)done;
 }
 
 static pid_t
