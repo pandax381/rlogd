@@ -414,10 +414,12 @@ out_forward_setup (struct module *module, struct dir *dir) {
     ev_timer_init(&ctx->connect.retry_w, on_retry, 3.0, 3.0);
     soc = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
     if (soc == -1) {
+        ctx->connect.w.fd = -1;
         ev_timer_start(ctx->loop, &ctx->connect.retry_w);
-    } 
-    ev_io_init(&ctx->connect.w, on_connect, soc, EV_WRITE);
-    ev_io_start(ctx->loop, &ctx->connect.w);
+    } else {
+        ev_io_init(&ctx->connect.w, on_connect, soc, EV_WRITE);
+        ev_io_start(ctx->loop, &ctx->connect.w);
+    }
     ctx->flush_w.data = ctx;
     ev_timer_init(&ctx->flush_w, on_flush, 1.0, 1.0);
     ev_timer_start(ctx->loop, &ctx->flush_w);
