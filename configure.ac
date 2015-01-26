@@ -48,7 +48,7 @@ fi
 AC_SUBST(LIBEV_LDADD)
 
 # Checks for libpcre
-AC_ARG_WITH([libpcre],[AC_HELP_STRING([--with-pcre=DIR],[location of the libpcre installed directory])],[LIBPCRE_PATH="$withval"])
+AC_ARG_WITH([libpcre],[AC_HELP_STRING([--with-libpcre=DIR],[location of the libpcre installed directory])],[LIBPCRE_PATH="$withval"])
 if test "$LIBPCRE_PATH"; then
     LDFLAGS="-L${LIBPCRE_PATH}/lib -Wl,-rpath,${LIBPCRE_PATH}/lib ${LDFLAGS}"
     CPPFLAGS="-I${LIBPCRE_PATH}/include ${CPPFLAGS}"
