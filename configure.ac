@@ -33,34 +33,38 @@ AC_CHECK_FUNCS([dup2 gettimeofday isascii localtime_r memchr memmove memset mkdi
 AX_PTHREAD
 
 # Checks for libev
-AC_ARG_WITH([libev],[AC_HELP_STRING([--with-libev=DIR],[location of the libev installed directory])],[LIBEV_PATH="$withval"])
-if test "$LIBEV_PATH"; then
-    LDFLAGS="-L${LIBEV_PATH}/lib -Wl,-rpath,${LIBEV_PATH}/lib ${LDFLAGS}"
-    CPPFLAGS="-I${LIBEV_PATH}/include ${CPPFLAGS}"
+AC_ARG_WITH([libev],[AC_HELP_STRING([--with-libev=DIR],[location of the libev installed directory])],[EV_PATH="$withval"],[])
+if test "$EV_PATH"; then
+    EV_LDFLAGS="-L${EV_PATH}/lib -Wl,-rpath,${EV_PATH}/lib"
+    EV_CPPFLAGS="-I${EV_PATH}/include"
 fi
-AC_CHECK_HEADER(ev.h,,[AC_MSG_ERROR([ev.h not found])])
-AC_ARG_ENABLE([libev-static],[AC_HELP_STRING([--enable-libev-static],[libev static link])],[LIBEV_STATIC="yes"])
-if test "$LIBEV_STATIC" = "yes"; then
-    LIBEV_LDADD="-lm ${LIBEV_PATH}/lib/libev.a"
+AX_CHECK_LIBRARY([EV],[ev.h],[ev],[],[AC_MSG_ERROR([libev not found])])
+AC_ARG_ENABLE([libev-static],[AC_HELP_STRING([--enable-libev-static],[libev static link])],[EV_STATIC="yes"],[])
+if test "$EV_STATIC" = "yes"; then
+    EV_LIBS="-lm ${EV_PATH}/lib/libev.a"
 else
-    LIBEV_LDADD="-lev"
+    EV_LIBS="-lev"
 fi
-AC_SUBST(LIBEV_LDADD)
+AC_SUBST(EV_LDFLAGS)
+AC_SUBST(EV_CPPFLAGS)
+AC_SUBST(EV_LIBS)
 
 # Checks for libpcre
-AC_ARG_WITH([libpcre],[AC_HELP_STRING([--with-libpcre=DIR],[location of the libpcre installed directory])],[LIBPCRE_PATH="$withval"])
-if test "$LIBPCRE_PATH"; then
-    LDFLAGS="-L${LIBPCRE_PATH}/lib -Wl,-rpath,${LIBPCRE_PATH}/lib ${LDFLAGS}"
-    CPPFLAGS="-I${LIBPCRE_PATH}/include ${CPPFLAGS}"
+AC_ARG_WITH([libpcre],[AC_HELP_STRING([--with-libpcre=DIR],[location of the libpcre installed directory])],[PCRE_PATH="$withval"],[])
+if test "$PCRE_PATH"; then
+    PCRE_LDFLAGS="-L${PCRE_PATH}/lib -Wl,-rpath,${PCRE_PATH}/lib"
+    PCRE_CPPFLAGS="-I${PCRE_PATH}/include"
 fi
-AC_CHECK_HEADER(pcre.h,,[AC_MSG_ERROR([pcre.h not found])])
-AC_ARG_ENABLE([libpcre-static],[AC_HELP_STRING([--enable-libpcre-static],[libpcre static link])],[LIBPCRE_STATIC="yes"])
-if test "$LIBPCRE_STATIC" = "yes"; then
-    PCRE_LDADD="-lm ${LIBPCRE_PATH}/lib/libpcre.a ${LIBS}"
+AX_CHECK_LIBRARY([PCRE],[pcre.h],[pcre],[],[AC_MSG_ERROR([libpcre not found])])
+AC_ARG_ENABLE([libpcre-static],[AC_HELP_STRING([--enable-libpcre-static],[libpcre static link])],[PCRE_STATIC="yes"],[])
+if test "$PCRE_STATIC" = "yes"; then
+    PCRE_LIBS="${PCRE_PATH}/lib/libpcre.a"
 else
-    PCRE_LDADD="-lpcre ${LIBS}"
+    PCRE_LIBS="-lpcre"
 fi
-AC_SUBST(PCRE_LDADD)
+AC_SUBST(PCRE_LDFLAGS)
+AC_SUBST(PCRE_CPPFLAGS)
+AC_SUBST(PCRE_LIBS)
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

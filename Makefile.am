@@ -1,20 +1,24 @@
 ACLOCAL_AMFLAGS = -I m4
 
-AM_CFLAGS = -W -Wall -Wno-unused-parameter -fno-strict-aliasing
+CFLAGS += -W -Wall -Wno-unused-parameter -fno-strict-aliasing
 
-bin_PROGRAMS  = rlogger rloggerd
+bin_PROGRAMS = rlogger rloggerd
 sbin_PROGRAMS = rlogd
 
 rlogger_SOURCES = rlogger.c common.c
-rlogger_LDADD = $(LIBEV_LDADD)
+rlogger_CFLAGS = $(EV_CPPFLAGS)
+rlogger_LDADD = $(EV_LIBS)
+rlogger_LDFLAGS = $(EV_LDFLAGS)
 
 rloggerd_SOURCES = rloggerd.c common.c buffer.c
-rloggerd_CFLAGS = $(PTHREAD_CFLAGS) $(AM_CFLAGS)
-rloggerd_LDADD = $(LIBEV_LDADD) $(PCRE_LDADD) $(PTHREAD_LIBS)
+rloggerd_CFLAGS = $(EV_CPPFLAGS) $(PCRE_CPPFLAGS) $(PTHREAD_CFLAGS)
+rloggerd_LDADD = $(EV_LIBS) $(PCRE_LIBS) $(PTHREAD_LIBS)
+rloggerd_LDFLAGS = $(EV_LDFLAGS) $(PCRE_LDFLAGS)
 
 rlogd_SOURCES = rlogd.c common.c buffer.c in_forward.c out_forward.c out_file.c
-rlogd_CFLAGS = $(PTHREAD_CFLAGS) $(AM_CFLAGS)
-rlogd_LDADD = $(LIBEV_LDADD) $(PCRE_LDADD) $(PTHREAD_LIBS)
+rlogd_CFLAGS = $(EV_CPPFLAGS) $(PCRE_CPPFLAGS) $(PTHREAD_CFLAGS)
+rlogd_LDADD = $(EV_LIBS) $(PCRE_LIBS) $(PTHREAD_LIBS)
+rlogd_LDFLAGS = $(EV_LDFLAGS) $(PCRE_LDFLAGS)
 
 EXTRA_DIST = README.md LICENSE autogen.sh rlogd.conf.example
 
