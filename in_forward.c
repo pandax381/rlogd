@@ -181,6 +181,8 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
         close(soc);
         return;
     }
+    opt = 1;
+    setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
         fprintf(stderr, "malloc: error\n");

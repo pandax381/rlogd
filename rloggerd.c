@@ -365,7 +365,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
 static void
 on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
     struct context *ctx;
-    int soc;
+    int soc, opt;
 
     ctx = (struct context *)w->data;
     if (ctx->terminate) {
@@ -378,6 +378,8 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
         ev_timer_start(loop, w);
         return;
     }
+    opt = 1;
+    setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ev_io_init(&ctx->connect.w, on_write, soc, EV_WRITE);
     ev_io_start(loop, &ctx->connect.w);
     fprintf(stderr, "Connection Established: soc=%d\n", soc);
@@ -387,7 +389,7 @@ void *
 thread_main (void *arg) {
     struct context *ctx;
     struct ev_loop *loop;
-    int soc;
+    int soc, opt;
 
     ctx = (struct context *)arg;
     loop = ev_loop_new(0);
@@ -401,6 +403,8 @@ thread_main (void *arg) {
     if (soc == -1) {
         ev_timer_start(loop, &ctx->connect.retry_w);
     } else {
+        opt = 1;
+        setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
         ev_io_init(&ctx->connect.w, on_write, soc, EV_WRITE);
         ev_io_start(loop, &ctx->connect.w);
         fprintf(stderr, "Connection Established: soc=%d\n", soc);

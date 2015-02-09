@@ -332,8 +332,10 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
         ev_io_stop(loop, w);
         close(w->fd);
         w->fd = -1;
-        ev_timer_start(ctx->loop, &ctx->connect.retry_w);;
+        ev_timer_start(ctx->loop, &ctx->connect.retry_w);
     }
+    opt = 1;
+    setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ev_set_cb(w, on_write);
     fprintf(stderr, "Connection Established: soc=%d\n", w->fd);
 }
