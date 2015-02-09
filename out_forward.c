@@ -226,7 +226,7 @@ static void
 on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     struct context *ctx;
     char path[PATH_MAX];
-    int fd;
+    int fd, skip = 0;
     struct hdr hdr;
     ssize_t n, done = 0, len;
 
@@ -235,7 +235,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         ev_break(loop, EVBREAK_ALL);
         return;
     }
-    snprintf(path, sizeof(path), "%s/%s.%d", ctx->env.buffer, BUFFER_FILE_NAME, ctx->buffer.cursor->r);
+    snprintf(path, sizeof(path), "%s/%s.%d", ctx->env.buffer, BUFFER_FILE_NAME, ctx->buffer.cursor->rb);
     fd = open(path, O_RDWR);
     if (fd == -1) {
         // TODO
@@ -260,11 +260,15 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         if (done < (ssize_t)sizeof(hdr)) {
             continue;
         }
-        writen(w->fd, &hdr, sizeof(hdr));
+        if (ntohl(hdr.seq) < ctx->buffer.cursor->rc) {
+            skip = 1;
+        } else {
+            writen(w->fd, &hdr, sizeof(hdr));
+        }
         done = 0;
         len = ntohl(hdr.len) - sizeof(hdr);
         while (done < len) {
-            n = _sendfile(w->fd, fd, len - done);
+            n = _sendfile(skip ? -1 : w->fd, fd, len - done);
             if (n == -1) {
                 if (errno == EINTR) {
                     continue;
@@ -287,6 +291,11 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             }
             done += n;
         }
+        if (skip) {
+            skip = 0;
+            done = 0;
+            continue;
+        }
         if (wait_ack(ctx, ntohl(hdr.seq)) == -1) {
             close(fd);
             ev_io_stop(loop, w);
@@ -295,10 +304,11 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             ev_timer_start(loop, &ctx->connect.retry_w);
             return;
         }
+        ctx->buffer.cursor->rc = ntohl(hdr.seq);
         done = 0;
     }
     close(fd);
-    ctx->buffer.cursor->r++;
+    ctx->buffer.cursor->rb++;
     unlink(path);
 }
 
@@ -346,7 +356,7 @@ on_flush (struct ev_loop *loop, struct ev_timer *w, int revents) {
     struct timeval now, diff;
 
     ctx = (struct context *)w->data;
-    if (!ctx->buffer.len || ctx->buffer.cursor->r != ctx->buffer.cursor->w) {
+    if (!ctx->buffer.len || ctx->buffer.cursor->rb != ctx->buffer.cursor->wb) {
         return;
     }
     gettimeofday(&now, NULL);

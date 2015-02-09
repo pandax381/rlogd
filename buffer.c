@@ -101,7 +101,7 @@ int
 buffer_create (struct buffer *buffer) {
     char path[PATH_MAX];
 
-    snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->w);
+    snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
     buffer->fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
     if (buffer->fd == -1) {
         fprintf(stderr, "open: %s, path=%s\n", strerror(errno), path);
@@ -115,7 +115,7 @@ buffer_resume (struct buffer *buffer) {
     char path[PATH_MAX];
     struct stat st;
 
-    snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->w);
+    snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
     buffer->fd = open(path, O_WRONLY);
     if (buffer->fd != -1) {
         fstat(buffer->fd, &st);
@@ -130,12 +130,12 @@ int
 buffer_flush (struct buffer *buffer) {
     char tmp[PATH_MAX], path[PATH_MAX];
 
-    snprintf(tmp, sizeof(tmp), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->w);
-    snprintf(path, sizeof(path), "%s/%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->w);
+    snprintf(tmp, sizeof(tmp), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
+    snprintf(path, sizeof(path), "%s/%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
     fprintf(stderr, "flush_buffer: %s\n", path);
     rename(tmp, path);
     close(buffer->fd);
-    buffer->cursor->w++;
+    buffer->cursor->wb++;
     buffer->fd = -1;
     buffer->len = 0;
     return 0;
@@ -159,7 +159,7 @@ buffer_write (struct buffer *buffer, const char *tag, size_t tag_len, struct ent
     hdr.ver  = HDR_VERSION;
     hdr.type = HDR_TYPE_PSH | HDR_NEED_ACK;
     hdr.off  = htons(off);
-    hdr.seq  = htonl(0);
+    hdr.seq  = htonl(buffer->cursor->wc++);
     hdr.len  = htonl(off + len);
     iov[0].iov_base = (void *)&hdr;
     iov[0].iov_len  = sizeof(hdr);

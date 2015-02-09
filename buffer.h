@@ -31,8 +31,10 @@
 #define BUFFER_FILE_NAME "buffer"
 
 struct position {
-    uint32_t r;
-    uint32_t w;
+    uint32_t rb;
+    uint32_t rc;
+    uint32_t wb;
+    uint32_t wc;
 };
 
 struct buffer {
