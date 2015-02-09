@@ -35,6 +35,7 @@
 #include <sys/queue.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <pthread.h>
 #include <ev.h>
@@ -379,7 +380,7 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
         return;
     }
     opt = 1;
-    setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
+    setsockopt(soc, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ev_io_init(&ctx->connect.w, on_write, soc, EV_WRITE);
     ev_io_start(loop, &ctx->connect.w);
     fprintf(stderr, "Connection Established: soc=%d\n", soc);
@@ -404,7 +405,7 @@ thread_main (void *arg) {
         ev_timer_start(loop, &ctx->connect.retry_w);
     } else {
         opt = 1;
-        setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
+        setsockopt(soc, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
         ev_io_init(&ctx->connect.w, on_write, soc, EV_WRITE);
         ev_io_start(loop, &ctx->connect.w);
         fprintf(stderr, "Connection Established: soc=%d\n", soc);
