@@ -4,7 +4,7 @@
 AC_PREREQ([2.69])
 AC_INIT([rlogd], [0.3.2], [https://github.com/pandax381/rlogd/issues/])
 AM_INIT_AUTOMAKE(foreign)
-AC_CONFIG_SRCDIR([rlogd.c])
+AC_CONFIG_SRCDIR([src/rlogd.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -66,5 +66,5 @@ AC_SUBST(PCRE_LDFLAGS)
 AC_SUBST(PCRE_CPPFLAGS)
 AC_SUBST(PCRE_LIBS)
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT
