@@ -46,6 +46,8 @@ struct context {
     struct module *module;
     struct {
         char *path;
+        char *user;
+        int mode;
     } env;
     int fd;
     char current[PATH_MAX];
@@ -95,6 +97,9 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
                     return;
                 }
                 strcpy(ctx->current, path);
+                if (ctx->env.user) {
+                    chperm(ctx->current, ctx->env.user, ctx->env.mode);
+                }
                 fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->current, ctx->fd);
             }
             ctx->timestamp = timestamp;
@@ -144,6 +149,7 @@ on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
 int
 out_file_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
+    char *val;
 
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
@@ -157,6 +163,17 @@ out_file_setup (struct module *module, struct dir *dir) {
         fprintf(stderr, "'path' is required\n");
         free(ctx);
         return -1;
+    }
+    ctx->env.user = config_dir_get_param_value(dir, "user");
+    ctx->env.mode = DEFAULT_SOCKET_MODE;
+    val = config_dir_get_param_value(dir, "mode");
+    if (val) {
+        ctx->env.mode = strtol(val, NULL, 8);
+        if (ctx->env.mode == -1) {
+            fprintf(stderr, "'mode' value is invalid\n");
+            free(ctx);
+            return -1;
+        }
     }
     ctx->fd = -1;
     ctx->loop = ev_loop_new(0);
