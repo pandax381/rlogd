@@ -1,3 +1,4 @@
+AM_CPPFLAGS = -DSYSCONFDIR=\"${sysconfdir}\" -DLOCALSTATEDIR=\"${localstatedir}\" 
 CFLAGS += -W -Wall -Wno-unused-parameter -fno-strict-aliasing
 
 bin_PROGRAMS = rlogger rloggerd

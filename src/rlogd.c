@@ -39,8 +39,8 @@
 #include "common.h"
 #include "rlogd.h"
 
-#define DEFAULT_CONFIG_FILE "/etc/rlogd.conf"
-#define DEFAULT_PID_FILE "/var/run/rlogd.pid"
+#define DEFAULT_CONFIG_FILE (SYSCONFDIR "/rlogd.conf")
+#define DEFAULT_PID_FILE (LOCALSTATEDIR "/run/rlogd.pid")
 
 typedef struct {
     char *config;

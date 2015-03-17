@@ -45,7 +45,7 @@
 
 #define APP_NAME "rloggerd"
 
-#define DEFAULT_BUFFER "/var/run/rlogd/rloggerd.buf"
+#define DEFAULT_BUFFER (LOCALSTATEDIR "/spool/rlogd/rloggerd/")
 #define DEFAULT_CHUNK DEFAULT_BUFFER_CHUNK_LIMIT
 #define DEFAULT_FLUSH DEFAULT_FLUSH_INTERVAL
 #define DEFAULT_LISTEN_ADDR DEFAULT_RLOGGERD_SOCKET
