@@ -85,7 +85,7 @@ sig_ignore (int n) {
 }
 
 int
-mkdir_p (const char *dir, mode_t mode) {
+mkdir_p (const char *dir, const char *user, mode_t mode) {
     char *s, *e, path[PATH_MAX];
     struct stat st;
 
@@ -99,6 +99,7 @@ mkdir_p (const char *dir, mode_t mode) {
             if (mkdir(path, mode) == -1) {
                 return -1;
             }
+            chperm(path, user, mode);
         } else {
             if (!S_ISDIR(st.st_mode)) {
                 return -1;
@@ -106,7 +107,11 @@ mkdir_p (const char *dir, mode_t mode) {
         }
         s = e + 1;
     }
-    return mkdir(dir, mode);
+    if (mkdir(dir, mode) == -1) {
+        return -1;
+    }
+    chperm(dir, user, mode);
+    return 0;
 }
 
 char *

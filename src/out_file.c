@@ -88,10 +88,10 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
                 p = strrchr(path, '/');
                 if (p) {
                     setchar(p, '\0');
-                    mkdir_p(path, DEFAULT_PERM_DIRS);
+                    mkdir_p(path, ctx->env.user, DEFAULT_PERM_DIRS);
                     setchar(p, '/');
                 }
-                ctx->fd = open(path, O_WRONLY | O_CREAT | O_APPEND, DEFAULT_PERM_FILE);
+                ctx->fd = open(path, O_WRONLY | O_CREAT | O_APPEND, ctx->env.mode);
                 if (ctx->fd == -1) {
                     fprintf(stderr, "%s: %s\n", strerror(errno), path);
                     return;

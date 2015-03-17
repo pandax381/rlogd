@@ -137,7 +137,7 @@ hexdump (FILE *fp, void *data, size_t size);
 extern void
 sig_ignore (int n);
 extern int
-mkdir_p (const char *dir, mode_t mode);
+mkdir_p (const char *dir, const char *user, mode_t mode);
 extern char *
 strtrim (char *str);
 extern struct timeval *
