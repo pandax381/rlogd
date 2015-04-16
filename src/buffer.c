@@ -45,6 +45,8 @@
 #include "common.h"
 #include "buffer.h"
 
+#define DEFAULT_PERM_DIRS (00755)
+
 static void
 buffer_resume (struct buffer *buffer);
 
@@ -60,6 +62,7 @@ buffer_init (struct buffer *buffer, const char *base) {
     snprintf(buffer->file, sizeof(buffer->file), "%s/%s", buffer->base, POSITION_FILE_NAME);
     fd = open(buffer->file, O_RDWR);
     if (fd == -1) {
+        mkdir_p(buffer->base, NULL, DEFAULT_PERM_DIRS);
         fd = open(buffer->file, O_RDWR | O_CREAT | O_EXCL, 00644);
         if (fd == -1) {
             fprintf(stderr, "open: %s, file=%s\n", strerror(errno), buffer->file);
