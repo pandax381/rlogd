@@ -178,6 +178,12 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     ctx->parent = (struct context *)w->data;
     ctx->rbuf.alloc = ctx->parent->opts->chunk;
     ctx->rbuf.data = malloc(ctx->rbuf.alloc);
+    if (!ctx->rbuf.data) {
+        fprintf(stderr, "malloc error\n");
+        free(ctx);
+        close(soc);
+        return;
+    }
     ev_io_init(&ctx->w, on_read, soc, EV_READ);
     ctx->w.data = ctx;
     ev_io_start(loop, &ctx->w);
