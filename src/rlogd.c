@@ -696,6 +696,12 @@ config_parse (struct config *dst, const char *path) {
             }
             parent = dir;
             dir = (struct dir *)malloc(sizeof(struct dir));
+            if (!dir) {
+                fprintf(stderr, "malloc error\n");
+                config_free(dst);
+                fclose(fp);
+                return -1;
+            }
             dir->parent = parent;
             name = buf + 1;
             n -= 2; /* '<' & '>'  */
@@ -732,6 +738,12 @@ config_parse (struct config *dst, const char *path) {
                 return -1;
             }
             param = (struct param *)malloc(sizeof(struct param));
+            if (!param) {
+                fprintf(stderr, "malloc error\n");
+                config_free(dst);
+                fclose(fp);
+                return -1;
+            }
             param->key = strtrim(strndup(buf, p - buf));
             param->value = strtrim(strndup(p + 1, n - ((p + 1) - buf)));
             if (!param->key || !param->value) {
