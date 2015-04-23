@@ -169,6 +169,9 @@ setup_client_socket (const char *address, const char *default_port, int nonblock
         return setup_unix_client_socket(address + 7, nonblock);
     } else {
         addr = strdup(address);
+        if (!addr) {
+            return -1;
+        }
         port = strrchr(addr, ':');
         if (!port) {
             if (!default_port) {
@@ -265,6 +268,9 @@ setup_server_socket (const char *address, const char *default_port, int backlog,
         return setup_unix_server_socket(address + 7, backlog, nonblock);
     } else {
         addr = strdup(address);
+        if (!addr) {
+            return -1;
+        }
         port = strrchr(addr, ':');
         if (!port) {
             if (!default_port) {
