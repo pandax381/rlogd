@@ -1,4 +1,4 @@
-# rlogd
+# rlogd [![Build Status](https://travis-ci.org/pandax381/rlogd.svg?branch=master)](https://travis-ci.org/pandax381/rlogd)
 Reliable LOG Daemon
 
 ## Build
