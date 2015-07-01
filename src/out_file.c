@@ -26,6 +26,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -45,26 +46,65 @@
 struct context {
     struct module *module;
     struct {
+        char *time_format;
+        char *format;
         char *path;
         char *user;
         int mode;
     } env;
     int fd;
-    char current[PATH_MAX];
+    char current_path[PATH_MAX];
+    char current_time[128];
     time_t timestamp;
     struct ev_loop *loop;
     struct ev_async shutdown_w;
 };
 
 static ssize_t
-format (char *dst, size_t size, time_t timestamp, const char *tag, size_t tag_len, const struct entry *entry) {
-    int n;
+format (char *dst, size_t size, const char *format, const char *tag, size_t tag_len, const char *timestamp, const struct entry *entry) {
+    char *sp, *ep, *dp;
+    int len;
+    void *key;
+    size_t keylen, ncopy;
 
-    n = snprintf(dst, size, "[%.*s] %.*s\n", (int)tag_len, tag, (int)ntohl(entry->len), (char *)entry->data);
-    if (n >= (int)size) {
-        return -1;
+    sp = ep = (char *)format;
+    len = strlen(format);
+    dp = dst;
+    while (1) {
+        sp = strchr(ep, '$');
+        if (!sp) {
+            ncopy = len - (ep - format);
+            memcpy(dp, ep, ncopy);
+            dp += ncopy;
+            break;
+        }
+        ncopy = sp - ep;
+        memcpy(dp, ep, ncopy);
+        dp += ncopy;
+        for (ep = sp + 1; *ep; ep++) {
+            if (!(isalnum(*ep) || *ep == '_')) {
+                break;
+            }
+        }
+        key = sp + 1;
+        keylen = ep - (sp + 1);
+        if (strncmp(key, "tag", keylen) == 0) {
+            ncopy = tag_len;
+            memcpy(dp, tag, ncopy);
+            dp += ncopy;
+        } else if (strncmp(key, "time", keylen) == 0) {
+            ncopy = strlen(timestamp);
+            memcpy(dp, timestamp, ncopy);
+            dp += ncopy;
+        } else if (strncmp(key, "record", keylen) == 0) {
+            ncopy = ntohl(entry->len);
+            memcpy(dp, entry->data, ncopy);
+            dp += ncopy;
+        }
+        sp = ep;
     }
-    return n;
+    *dp++ = '\n';
+    return dp - dst;
 }
 
 static void
@@ -81,7 +121,8 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
         timestamp = (time_t)ntohl(entry->timestamp);
         if (ctx->timestamp != timestamp || ctx->fd == -1) {
             strftime(path, sizeof(path), ctx->env.path, localtime_r(&timestamp, &tm));
-            if (strcmp(ctx->current, path) != 0) {
+            strftime(ctx->current_time, sizeof(ctx->current_time), ctx->env.time_format, localtime_r(&timestamp, &tm));
+            if (strcmp(ctx->current_path, path) != 0) {
                 if (ctx->fd != -1) {
                     close(ctx->fd);
                 }
@@ -96,15 +137,15 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
                     fprintf(stderr, "%s: %s\n", strerror(errno), path);
                     return;
                 }
-                strcpy(ctx->current, path);
+                strcpy(ctx->current_path, path);
                 if (ctx->env.user) {
-                    chperm(ctx->current, ctx->env.user, ctx->env.mode);
+                    chperm(ctx->current_path, ctx->env.user, ctx->env.mode);
                 }
-                fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->current, ctx->fd);
+                fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->current_path, ctx->fd);
             }
             ctx->timestamp = timestamp;
         }
-        n = format(buf, sizeof(buf), timestamp, tag, tag_len, entry);
+        n = format(buf, sizeof(buf), ctx->env.format, tag, tag_len, ctx->current_time, entry);
         if (n == -1) {
             fprintf(stderr, "entry message too long\n");
             return;
@@ -146,6 +187,45 @@ on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
     ev_break(loop, EVBREAK_ALL);
 }
 
+static char *
+unescape (char *s) {
+    char *p;
+    size_t n;
+
+    p = s;
+    n = strlen(s);
+    while ((p = strchr(p, '\\')) != NULL) {
+        switch (p[1]) {
+        case '\\':
+            *p++ = '\\';
+            break;
+        case 'a':
+            *p++ = '\a';
+            break;
+        case 'b':
+            *p++ = '\b';
+            break;
+        case 'n':
+            *p++ = '\n';
+            break;
+        case 'r':
+            *p++ = '\r';
+            break;
+        case 't':
+            *p++ = '\t';
+            break;
+        case 'v':
+            *p++ = '\v';
+            break;
+        default:
+            fprintf(stderr, "'\\%c' is unsupported escape sequence\n", p[1]);
+            break;
+        }
+        memmove(p, p + 1, n - (p - s));
+    }
+    return s;
+}
+
 int
 out_file_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
@@ -158,6 +238,15 @@ out_file_setup (struct module *module, struct dir *dir) {
     }
     memset(ctx, 0, sizeof(*ctx));
     ctx->module = module;
+    ctx->env.time_format = config_dir_get_param_value(dir, "time_format");
+    if (!ctx->env.time_format) {
+        ctx->env.time_format = "%s";
+    }
+    ctx->env.format = config_dir_get_param_value(dir, "format");
+    if (!ctx->env.format) {
+        ctx->env.format = "$time $tag: $record";
+    }
+    unescape(ctx->env.format);
     ctx->env.path = config_dir_get_param_value(dir, "path");
     if (!ctx->env.path) {
         fprintf(stderr, "'path' is required\n");
