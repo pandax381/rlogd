@@ -19,6 +19,8 @@
 <label forwarded>
     <match example.acc.**>
         type file
+        # time_format time_format %s
+        # format $time $tag: $record
         path /var/log/rlogd/example/%Y-%m-%d/acc_%H%M.log
     </match>
     <match example.err.**>
