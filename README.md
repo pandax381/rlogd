@@ -81,7 +81,7 @@ Note: This program has been tested with Linux (kernel 3.2.0) and Mac OSX (10.9.5
     <label forwarded>
         <match example.acc.**>
             type file
-            # time_format time_format %s
+            # time_format %s
             # format $time $tag: $record
             path /var/run/rlogd/logs/example/%Y-%m-%d/acc_%H%M.log
         </match>
