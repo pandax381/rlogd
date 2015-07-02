@@ -516,3 +516,97 @@ chperm (const char *path, const char *user, mode_t mode) {
     }
     return 0;
 }
+
+int
+ctoi (int c) {
+    if (c >= 'a' && c <= 'f') {
+        return (c - 'a') + 10;
+    }
+    if (c >= 'A' && c <= 'F' ) {
+        return (c - 'A') + 10;
+    }
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    return 0;
+}
+
+int
+isodigit (int c) {
+    return (c >= '0' && c <= '7') ? 1 : 0;
+}
+
+char *
+unescape (char *str, size_t len) {
+    char *dp, *sp, *ep;
+    int esc, num, n;
+
+    dp = ep = str;
+    while (1) {
+        sp = memchr(ep, '\\', len - (ep - str));
+        if (!sp) {
+            if (ep != str) {
+                n = len - (ep - str);
+                memmove(dp, ep, n);
+                dp[n] = '\0';
+            }
+            break;
+        }
+        memmove(dp, ep, sp - ep);
+        dp += sp - ep;
+        esc = 2; /* majority of the escape sequence length */
+        switch (sp[1]) {
+        case '\\':
+            *dp++ = '\\';
+            break;
+        case 'a':
+            *dp++ = '\a';
+            break;
+        case 'b':
+            *dp++ = '\b';
+            break;
+        case 'n':
+            *dp++ = '\n';
+            break;
+        case 'r':
+            *dp++ = '\r';
+            break;
+        case 't':
+            *dp++ = '\t';
+            break;
+        case 'v':
+            *dp++ = '\v';
+            break;
+        case '0':
+        case '1':
+        case '2':
+        case '3':
+        case '4':
+        case '5':
+        case '6':
+        case '7':
+            for (n = 0, num = 0; n < 3 && isodigit(sp[1+n]); n++) {
+                num = (num << 3) | ctoi(sp[1+n]);
+            }
+            esc += n - 1; /* n is never 0 */
+            *dp++ = num;
+            break;
+        case 'x':
+            for (n = 0, num = 0; n < 2 && isxdigit(sp[2+n]); n++) {
+                num = (num << 4) | ctoi(sp[2+n]);
+            }
+            if (n == 0) {
+                /* error */
+                break;
+            }
+            esc += n;
+            *dp++ = num;
+            break;
+        default:
+            fprintf(stderr, "'\\%c' is unsupported escape sequence\n", sp[1]);
+            break;
+        }
+        ep = sp + esc;
+    }
+    return str;
+}

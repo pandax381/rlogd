@@ -166,5 +166,11 @@ extern int
 daemonize (const char *dir, int noclose);
 extern int
 chperm (const char *path, const char *user, mode_t mode);
+extern int
+ctoi (int c);
+extern int
+isodigit (int c);
+extern char *
+unescape (char *str, size_t len);
 
 #endif

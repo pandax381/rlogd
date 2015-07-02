@@ -187,45 +187,6 @@ on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
     ev_break(loop, EVBREAK_ALL);
 }
 
-static char *
-unescape (char *s) {
-    char *p;
-    size_t n;
-
-    p = s;
-    n = strlen(s);
-    while ((p = strchr(p, '\\')) != NULL) {
-        switch (p[1]) {
-        case '\\':
-            *p++ = '\\';
-            break;
-        case 'a':
-            *p++ = '\a';
-            break;
-        case 'b':
-            *p++ = '\b';
-            break;
-        case 'n':
-            *p++ = '\n';
-            break;
-        case 'r':
-            *p++ = '\r';
-            break;
-        case 't':
-            *p++ = '\t';
-            break;
-        case 'v':
-            *p++ = '\v';
-            break;
-        default:
-            fprintf(stderr, "'\\%c' is unsupported escape sequence\n", p[1]);
-            break;
-        }
-        memmove(p, p + 1, n - (p - s));
-    }
-    return s;
-}
-
 int
 out_file_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
@@ -246,7 +207,7 @@ out_file_setup (struct module *module, struct dir *dir) {
     if (!ctx->env.format) {
         ctx->env.format = "$time $tag: $record";
     }
-    unescape(ctx->env.format);
+    unescape(ctx->env.format, strlen(ctx->env.format));
     ctx->env.path = config_dir_get_param_value(dir, "path");
     if (!ctx->env.path) {
         fprintf(stderr, "'path' is required\n");
