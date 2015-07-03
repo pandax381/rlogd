@@ -205,7 +205,7 @@ out_file_setup (struct module *module, struct dir *dir) {
     }
     ctx->env.format = config_dir_get_param_value(dir, "format");
     if (!ctx->env.format) {
-        ctx->env.format = "$time $tag: $record";
+        ctx->env.format = "[$tag] $record";
     }
     unescape(ctx->env.format, strlen(ctx->env.format));
     ctx->env.path = config_dir_get_param_value(dir, "path");
