@@ -47,6 +47,7 @@
 
 typedef struct {
     int debug;
+    int tee;
     char *target;
     int timeout;
     int limit;
@@ -104,6 +105,9 @@ static int
 on_message (struct context *ctx, struct timeval *tstamp, const char *data, size_t len) {
     struct entry *entry;
 
+    if (ctx->option.tee) {
+        printf("%.*s\n", (int)len, data);
+    }
     if (!buf_permit(&ctx->sbuf, sizeof(struct entry) + len)) {
         if (on_flush(ctx) == -1) {
             return -1;
@@ -329,6 +333,7 @@ usage (void) {
     printf("usage: %s [options] <tag>\n", APP_NAME);
     printf("  options:\n");
     printf("    -d, --debug         # debug mode\n");
+    printf("        --tee           # write to both target and standard output\n");
     printf("    -t, --target=TARGET # target (default: %s)\n", DEFAULT_TARGET);
     printf("    -T, --timeout=SEC   # connection timeout sec (default: system default)\n");
     printf("    -c, --chunk=SIZE    # maximum length of the chunk (default: %d)\n", DEFAULT_LIMIT);
@@ -351,12 +356,14 @@ option_parse (option_t *dst, int argc, char *argv[]) {
         {"timeout", 1, NULL, 'T'},
         {"chunk",   1, NULL, 'c'},
         {"flush",   1, NULL, 'f'},
+        {"tee",     0, NULL,  3 },
         {"help",    0, NULL,  2 },
         {"version", 0, NULL,  1 },
         { NULL,     0, NULL,  0 }
     };
 
     dst->debug = 0;
+    dst->tee = 0;
     dst->target = DEFAULT_TARGET;
     dst->timeout = 0;
     dst->limit = DEFAULT_LIMIT;
@@ -391,6 +398,9 @@ option_parse (option_t *dst, int argc, char *argv[]) {
                 usage();
                 return -1;
             }
+            break;
+        case 3:
+            dst->tee = 1;
             break;
         case 2:
             usage();
