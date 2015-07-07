@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.61])
-AC_INIT([rlogd], [0.3.7], [https://github.com/pandax381/rlogd/issues/])
+AC_INIT([rlogd], [0.3.8], [https://github.com/pandax381/rlogd/issues/])
 AM_INIT_AUTOMAKE(foreign)
 AC_CONFIG_SRCDIR([src/rlogd.c])
 AC_CONFIG_HEADERS([config.h])
@@ -29,7 +29,7 @@ AC_TYPE_UINT8_T
 AC_FUNC_FORK
 AC_FUNC_MALLOC
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([dup2 gettimeofday isascii localtime_r memchr memmove memset mkdir regcomp socket strchr strdup strerror strndup strpbrk strrchr strtol])
+AC_CHECK_FUNCS([dup2 gettimeofday isascii localtime_r memchr memmove memset mkdir regcomp socket strchr strdup strerror strndup strpbrk strrchr strtol memrchr])
 AX_PTHREAD
 
 # Checks for libev
