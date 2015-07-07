@@ -51,29 +51,37 @@ struct context {
         char *path;
         char *user;
         int mode;
+        int embed_hostname;
     } env;
     int fd;
-    char current_path[PATH_MAX];
-    char current_time[128];
     time_t timestamp;
+    char template[PATH_MAX];
+    char path[PATH_MAX];
+    char timestr[128];
     struct ev_loop *loop;
     struct ev_async shutdown_w;
 };
 
-static ssize_t
-format (char *dst, size_t size, const char *format, const char *tag, size_t tag_len, const char *timestamp, const struct entry *entry) {
-    char *sp, *ep, *dp;
-    int len;
-    void *key;
-    size_t keylen, ncopy;
+struct kv {
+    char *k;
+    size_t klen;
+    char *v;
+    size_t vlen;
+};
 
-    sp = ep = (char *)format;
-    len = strlen(format);
+static ssize_t
+format (char *dst, size_t size, const char *fmt, const struct kv *table) {
+    char *sp, *ep, *dp, *k;
+    size_t len, ncopy, klen;
+    struct kv *kv;
+
+    sp = ep = (char *)fmt;
+    len = strlen(fmt);
     dp = dst;
     while (1) {
         sp = strchr(ep, '$');
         if (!sp) {
-            ncopy = len - (ep - format);
+            ncopy = len - (ep - fmt);
             memcpy(dp, ep, ncopy);
             dp += ncopy;
             break;
@@ -86,70 +94,108 @@ format (char *dst, size_t size, const char *format, const char *tag, size_t tag_
                 break;
             }
         }
-        key = sp + 1;
-        keylen = ep - (sp + 1);
-        if (strncmp(key, "tag", keylen) == 0) {
-            ncopy = tag_len;
-            memcpy(dp, tag, ncopy);
-            dp += ncopy;
-        } else if (strncmp(key, "time", keylen) == 0) {
-            ncopy = strlen(timestamp);
-            memcpy(dp, timestamp, ncopy);
-            dp += ncopy;
-        } else if (strncmp(key, "record", keylen) == 0) {
-            ncopy = ntohl(entry->len);
-            memcpy(dp, entry->data, ncopy);
-            dp += ncopy;
+        k = sp + 1;
+        klen = ep - (sp + 1);
+        for (kv = (struct kv *)table; kv && kv->k; kv++) {
+            if (klen == kv->klen && memcmp(k, kv->k, klen) == 0) {
+                ncopy = kv->vlen;
+                memcpy(dp, kv->v, ncopy);
+                dp += ncopy;
+            }
         }
         sp = ep;
     }
-    *dp++ = '\n';
+    *dp = '\0';
     return dp - dst;
+}
+
+static int
+reopenfile (struct context *ctx) {
+    char path[PATH_MAX];
+    struct tm tm;
+    char *p;
+
+    strftime(path, sizeof(path), ctx->template, localtime_r(&ctx->timestamp, &tm));
+    strftime(ctx->timestr, sizeof(ctx->timestr), ctx->env.time_format, localtime_r(&ctx->timestamp, &tm));
+    if (strcmp(ctx->path, path) != 0 || ctx->fd == -1) {
+        strcpy(ctx->path, path);
+        if (ctx->fd != -1) {
+            close(ctx->fd);
+        }
+        p = strrchr(ctx->path, '/');
+        if (p) {
+            setchar(p, '\0');
+            mkdir_p(ctx->path, ctx->env.user, DEFAULT_PERM_DIRS);
+            setchar(p, '/');
+        }
+        ctx->fd = open(ctx->path, O_WRONLY | O_CREAT | O_APPEND, ctx->env.mode);
+        if (ctx->fd == -1) {
+            fprintf(stderr, "%s: %s\n", strerror(errno), ctx->path);
+            return -1;
+        }
+        if (ctx->env.user) {
+            chperm(ctx->path, ctx->env.user, ctx->env.mode);
+        }
+        fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->path, ctx->fd);
+    }
+    return 0;
 }
 
 static void
 emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, size_t len) {
     struct context *ctx;
-    time_t timestamp;
-    struct tm tm;
-    char path[PATH_MAX], *p, buf[65536];
-    ssize_t n;
+    char template[PATH_MAX], buf[65536];
     const struct entry *entry;
+    time_t timestamp;
+    ssize_t n;
+    struct kv table[] = {
+        {"tag",      3, NULL, 0},
+        {"time",     4, NULL, 0},
+        {"hostname", 8, NULL, 0},
+        {"record",   6, NULL, 0},
+        { NULL,      0, NULL, 0}
+    };
 
     ctx = (struct context *)arg;
+    if (ctx->env.embed_hostname) {
+        table[2].v = memrchr(tag, '.', tag_len);
+        if (table[2].v) {
+            table[2].vlen = tag_len - (++table[2].v - tag);
+            tag_len -= table[2].vlen + 1;
+        }
+    }
+    table[0].v = (char *)tag;
+    table[0].vlen = tag_len;
+    format(template, sizeof(template), ctx->env.path, table);
+    if (strcmp(ctx->template, template) != 0) {
+        strcpy(ctx->template, template);
+        if (ctx->fd != -1) {
+            close(ctx->fd);
+            ctx->fd = -1;
+        }
+    }
     for (entry = entries; (caddr_t)entry < (caddr_t)entries + len; entry = NEXT_ENTRY(entry)) {
         timestamp = (time_t)ntohl(entry->timestamp);
         if (ctx->timestamp != timestamp || ctx->fd == -1) {
-            strftime(path, sizeof(path), ctx->env.path, localtime_r(&timestamp, &tm));
-            strftime(ctx->current_time, sizeof(ctx->current_time), ctx->env.time_format, localtime_r(&timestamp, &tm));
-            if (strcmp(ctx->current_path, path) != 0) {
-                if (ctx->fd != -1) {
-                    close(ctx->fd);
-                }
-                p = strrchr(path, '/');
-                if (p) {
-                    setchar(p, '\0');
-                    mkdir_p(path, ctx->env.user, DEFAULT_PERM_DIRS);
-                    setchar(p, '/');
-                }
-                ctx->fd = open(path, O_WRONLY | O_CREAT | O_APPEND, ctx->env.mode);
-                if (ctx->fd == -1) {
-                    fprintf(stderr, "%s: %s\n", strerror(errno), path);
-                    return;
-                }
-                strcpy(ctx->current_path, path);
-                if (ctx->env.user) {
-                    chperm(ctx->current_path, ctx->env.user, ctx->env.mode);
-                }
-                fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->current_path, ctx->fd);
-            }
             ctx->timestamp = timestamp;
+            if (reopenfile(ctx) == -1) {
+                return;
+            }
+            table[1].v = ctx->timestr;
+            table[1].vlen = strlen(ctx->timestr);
         }
-        n = format(buf, sizeof(buf), ctx->env.format, tag, tag_len, ctx->current_time, entry);
+        if (!table[1].v) {
+            table[1].v = ctx->timestr;
+            table[1].vlen = strlen(ctx->timestr);
+        }
+        table[3].v = (char *)entry->data;
+        table[3].vlen = ntohl(entry->len);
+        n = format(buf, sizeof(buf), ctx->env.format, table);
         if (n == -1) {
             fprintf(stderr, "entry message too long\n");
             return;
         }
+        buf[n++] = '\n';
         writen(ctx->fd, buf, n);
     }
 }
@@ -225,6 +271,8 @@ out_file_setup (struct module *module, struct dir *dir) {
             return -1;
         }
     }
+    val = config_dir_get_param_value(dir, "embed_hostname");
+    ctx->env.embed_hostname = (val && strcmp(val, "true") == 0) ? 1 : 0;
     ctx->fd = -1;
     ctx->loop = ev_loop_new(0);
     if (!ctx->loop) {

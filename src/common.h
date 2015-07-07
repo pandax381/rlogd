@@ -172,5 +172,9 @@ extern int
 isodigit (int c);
 extern char *
 unescape (char *str, size_t len);
+#ifndef HAVE_MEMRCHR
+extern void *
+memrchr (const void *s, int c, size_t n);
+#endif
 
 #endif

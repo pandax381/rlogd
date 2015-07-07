@@ -610,3 +610,19 @@ unescape (char *str, size_t len) {
     }
     return str;
 }
+
+#ifndef HAVE_MEMRCHR
+void *
+memrchr (const void *s, int c, size_t n) {
+    const unsigned char *p;
+
+    if (n) {
+        for (p = (unsigned char *)s; n; n--) {
+            if (p[n-1] == (unsigned char)c) {
+                return (void *)&p[n-1];
+            }
+        }
+    }
+    return NULL;
+}
+#endif
