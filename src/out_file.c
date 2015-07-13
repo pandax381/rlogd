@@ -122,6 +122,16 @@ reopenfile (struct context *ctx) {
         if (ctx->fd != -1) {
             close(ctx->fd);
         }
+        p = ctx->path;
+        while ((p = strstr(p, "../")) != NULL) {
+            p[2] = '_';
+            p += 3;
+        }
+        p = ctx->path;
+        while ((p = strstr(p, "/..")) != NULL) {
+            p[0] = '_';
+            p += 3;
+        }
         p = strrchr(ctx->path, '/');
         if (p) {
             setchar(p, '\0');
