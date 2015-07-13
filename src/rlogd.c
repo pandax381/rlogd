@@ -378,13 +378,19 @@ convert_regex_pattern (char *dst, size_t size, const char *src, size_t len) {
             esc = 1;
         } else if (src[n] == '.') {
             dot = 1;
-        } else if (src[n] == '*'){
+        } else if (src[n] == '*') {
             dst[off++] = '[';
             dst[off++] = '^';
             dst[off++] = '\\';
             dst[off++] = '.';
             dst[off++] = ']';
             dst[off++] = '*';
+        } else if (src[n] == '{') {
+            dst[off++] = '(';
+        } else if (src[n] == '}') {
+            dst[off++] = ')';
+        } else if (src[n] == ',') {
+            dst[off++] = '|';
         } else if (!(isalnum(src[n]) || src[n] == '_')) {
             dst[off++] = '\\';
         } else {
