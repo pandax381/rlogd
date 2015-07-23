@@ -41,6 +41,8 @@
 #include <pwd.h>
 #include "common.h"
 
+int __debug;
+
 void
 hexdump (FILE *fp, void *data, size_t size) {
     unsigned char *src;
@@ -228,7 +230,7 @@ setup_tcp_client_socket (const char *host, const char *port, int nonblock) {
     hints.ai_socktype = SOCK_STREAM;
     err = getaddrinfo(host, port, &hints, &ais);
     if (err) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
+        fprintf(stderr, "getaddrinfo: %s, host=%s, port=%s\n", gai_strerror(err), PRINTSTR(host), PRINTSTR(port));
         return -1;
     }
     for (ai = ais; ai; ai = ai->ai_next) {
@@ -331,7 +333,7 @@ setup_tcp_server_socket (const char *host, const char *port, int backlog, int no
     hints.ai_flags = AI_PASSIVE,
     err = getaddrinfo(host, port, &hints, &ais);
     if (err) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(err));
+        fprintf(stderr, "getaddrinfo: %s, host=%s, port=%s\n", gai_strerror(err), PRINTSTR(host), PRINTSTR(port));
         return -1;
     }
     for (ai = ais; ai; ai = ai->ai_next) {

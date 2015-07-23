@@ -59,6 +59,16 @@ const typeof( ((type *)0)->member ) *__mptr = (ptr); \
 
 #define setchar(x, y) (*(x) = y)
 
+extern int __debug;
+
+#define __print(type, fmt, ...) \
+    fprintf(stderr, "[%s] " fmt " (%s:%d)\n", type, ##__VA_ARGS__, __FILE__, __LINE__);
+#define error_print(...) \
+    __print("error", __VA_ARGS__);
+#define debug_print(...) \
+    if (__debug) \
+        __print("degug", __VA_ARGS__);
+
 struct string {
     char *text;
     size_t len;
