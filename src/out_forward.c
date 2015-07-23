@@ -389,6 +389,8 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
 static int
 parse_options (struct env *env, struct dir *dir) {
     struct param *param;
+    char *endptr;
+    long int val;
 
     TAILQ_FOREACH(param, &dir->params, lp) {
         if (strcmp(param->key, "type") == 0) {
@@ -397,6 +399,20 @@ parse_options (struct env *env, struct dir *dir) {
             env->buffer = param->value;
         } else if (strcmp(param->key, "target") == 0) {
             env->target = param->value;
+        } else if (strcmp(param->key, "buffer_chunk_limit") == 0) {
+            val = strtol(param->value, &endptr, 10);
+            if (val < 0 || *endptr != '\0') {
+                fprintf(stderr, "error: value of 'buffer_chunk_limit' is invalid, line %zu\n", param->line);
+                return -1;
+            }
+            env->limit = val;
+        } else if (strcmp(param->key, "flush_interval") == 0) {
+            val = strtol(param->value, &endptr, 10);
+            if (val < 0 || *endptr) {
+                fprintf(stderr, "error: value of 'flush_interval' is invalid, line %zu\n", param->line);
+                return -1;
+            }
+            env->interval = val;
         } else {
             fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
         }
