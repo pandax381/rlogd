@@ -27,6 +27,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -39,14 +41,16 @@
 #include "rlogd.h"
 #include "common.h"
 
+struct env {
+    char *bind;
+    char *user;
+    int mode;
+    int limit;
+};
+
 struct context {
     struct module *module;
-    struct {
-        char *bind;
-        char *user;
-        int mode;
-        int limit;
-    } env;
+    struct env env;
     struct ev_loop *loop;
     struct ev_io w;
     struct ev_async shutdown_w;
@@ -206,11 +210,46 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     fprintf(stderr, "in_forward: Accepted new connection, fd=%d\n", soc);
 }
 
+static int
+parse_params (struct env *env, struct dir *dir) {
+    struct param *param;
+    char *p;
+
+    TAILQ_FOREACH(param, &dir->params, lp) {
+        if (strcmp(param->key, "type") == 0 || strcmp(param->key, "label") == 0 ) {
+            // ignore
+        } else if (strcmp(param->key, "bind") == 0) {
+            env->bind = param->value;
+        } else if (strcmp(param->key, "user") == 0) {
+            env->user = param->value;
+        } else if (strcmp(param->key, "mode") == 0) {
+            env->mode = 0;
+            for (p = param->value; *p; p++) {
+                if (!isodigit(*p)) {
+                    fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                    return -1;
+                }
+                env->mode = (env->mode << 3) | ctoi(*p);
+            }
+            if (!env->mode || env->mode > 0777) {
+                fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                return -1;
+            }
+        } else {
+            fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
+        }
+    }
+    if (!env->bind) {
+        fprintf(stderr, "error: 'bind' is required, line %zu\n", dir->line);
+        return -1;
+    }
+    return 0;
+}
+
 int
 in_forward_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
     int soc;
-    char *val;
 
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
@@ -218,38 +257,28 @@ in_forward_setup (struct module *module, struct dir *dir) {
         return -1;
     }
     ctx->module = module;
-    ctx->env.bind = config_dir_get_param_value(dir, "bind");
-    if (!ctx->env.bind) {
-        fprintf(stderr, "'bind' is required\n");
-        free(ctx);
-        return -1;
-    }
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
-    soc = setup_server_socket(ctx->env.bind, DEFAULT_RLOGD_PORT, SOMAXCONN, 0);
-    if (soc == -1) {
-        fprintf(stderr, "setup_server_socket: error\n");
+    ctx->env.mode  = DEFAULT_SOCKET_MODE;
+    if (parse_params(&ctx->env, dir) == -1) {
         free(ctx);
         return -1;
     }
-    if (strncmp(ctx->env.bind, "unix://", 7) == 0) {
-        ctx->env.user = config_dir_get_param_value(dir, "user");
-        val = config_dir_get_param_value(dir, "mode");
-        if (val) {
-            ctx->env.mode = strtol(val, NULL, 8);
-            if (ctx->env.mode == -1) {
-                fprintf(stderr, "'mode' value is invalid\n");
+    if (__dryrun) {
+        soc = open("/dev/null", O_RDWR);
+    } else {
+        soc = setup_server_socket(ctx->env.bind, DEFAULT_RLOGD_PORT, SOMAXCONN, 0);
+        if (soc == -1) {
+            fprintf(stderr, "setup_server_socket: error\n");
+            free(ctx);
+            return -1;
+        }
+        if (strncmp(ctx->env.bind, "unix://", 7) == 0) {
+            if (chperm(ctx->env.bind + 7, ctx->env.user, ctx->env.mode) == -1) {
+                fprintf(stderr, "chperm: error\n");
                 close(soc);
                 free(ctx);
                 return -1;
             }
-        } else {
-            ctx->env.mode = DEFAULT_SOCKET_MODE;
-        }
-        if (chperm(ctx->env.bind + 7, ctx->env.user, ctx->env.mode) == -1) {
-            fprintf(stderr, "chperm: error\n");
-            close(soc);
-            free(ctx);
-            return -1;
         }
     }
     ctx->loop = ev_loop_new(0);

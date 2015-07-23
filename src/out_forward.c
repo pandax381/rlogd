@@ -47,14 +47,16 @@
 #include "buffer.h"
 #include "common.h"
 
+struct env {
+    char *target;
+    char *buffer;
+    size_t limit;
+    size_t interval;
+};
+
 struct context {
     struct module *module;
-    struct {
-        char *target;
-        char *buffer;
-        size_t limit;
-        size_t interval;
-    } env;
+    struct env env;
     struct ev_loop *loop;
     struct {
         struct ev_io w;
@@ -329,7 +331,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
         return;
     }
     if (err) {
-        fprintf(stderr, "connect: %s\n", strerror(err));
+        fprintf(stderr, "connect: %s, target=%s\n", strerror(err), ctx->env.target);
         ev_io_stop(loop, w);
         close(w->fd);
         w->fd = -1;
@@ -384,6 +386,32 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
     ev_io_start(loop, &ctx->connect.w);
 }
 
+static int
+parse_options (struct env *env, struct dir *dir) {
+    struct param *param;
+
+    TAILQ_FOREACH(param, &dir->params, lp) {
+        if (strcmp(param->key, "type") == 0) {
+            // ignore
+        } else if (strcmp(param->key, "buffer_path") == 0) {
+            env->buffer = param->value;
+        } else if (strcmp(param->key, "target") == 0) {
+            env->target = param->value;
+        } else {
+            fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
+        }
+    }
+    if (!env->buffer) {
+        fprintf(stderr, "error: 'buffer' is required, line %zu\n", dir->line);
+        return -1;
+    }
+    if (!env->target) {
+        fprintf(stderr, "error: 'target' is required, line %zu\n", dir->line);
+        return -1;
+    }
+    return 0;
+}
+
 int
 out_forward_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
@@ -395,36 +423,38 @@ out_forward_setup (struct module *module, struct dir *dir) {
     }
     ctx->terminate = 0;
     ctx->module = module;
-    ctx->env.buffer = config_dir_get_param_value((struct dir *)dir, "buffer_path");
-    if (!ctx->env.buffer) {
-        fprintf(stderr, "'buffer_path' is required\n");
-        free(ctx);
-        return -1;
-    }
-    if (buffer_init(&ctx->buffer, ctx->env.buffer) == -1) {
-        fprintf(stderr, "position file load error\n");
-        free(ctx);
-        return -1;
-    }
-    ctx->env.target = config_dir_get_param_value((struct dir *)dir, "target");
-    if (!ctx->env.target) {
-        fprintf(stderr, "'target' is required\n");
-        buffer_terminate(&ctx->buffer);
-        free(ctx);
-        return -1;
-    }
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
     ctx->env.interval = DEFAULT_FLUSH_INTERVAL;
+    if (parse_options(&ctx->env, dir) == -1) {
+        free(ctx);
+        return -1;
+    }
+    if (__dryrun) {
+        ctx->buffer.fd = -1;
+        ctx->buffer.cursor = NULL;
+    } else {
+        if (buffer_init(&ctx->buffer, ctx->env.buffer) == -1) {
+            fprintf(stderr, "position file load error\n");
+            free(ctx);
+            return -1;
+        }
+    }
     ctx->loop = ev_loop_new(0);
     if (!ctx->loop) {
-        buffer_terminate(&ctx->buffer);
+        if (!__dryrun) {
+            buffer_terminate(&ctx->buffer);
+        }
         free(ctx);
         return -1;
     }
     ctx->connect.w.data = ctx;
     ctx->connect.retry_w.data = ctx;
     ev_timer_init(&ctx->connect.retry_w, on_retry, 3.0, 3.0);
-    soc = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
+    if (__dryrun) {
+        soc = open("/dev/null", O_RDWR);
+    } else {
+        soc = setup_client_socket(ctx->env.target, DEFAULT_RLOGD_PORT, 1);
+    }
     if (soc == -1) {
         ctx->connect.w.fd = -1;
         ev_timer_start(ctx->loop, &ctx->connect.retry_w);

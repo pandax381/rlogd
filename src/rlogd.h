@@ -37,6 +37,7 @@ struct module {
 struct param {
     char *key;
     char *value;
+    size_t line;
     TAILQ_ENTRY(param) lp;
 };
 
@@ -44,6 +45,7 @@ struct dir {
     struct dir *parent;
     char *name;
     char *arg;
+    size_t line;
     TAILQ_HEAD(/**/, param) params;
     TAILQ_HEAD(/**/, dir) dirs;
     TAILQ_ENTRY(dir) lp;
@@ -52,6 +54,8 @@ struct dir {
 struct config {
     TAILQ_HEAD(/**/, dir) dirs;
 };
+
+extern int __dryrun;
 
 extern char *
 config_dir_get_param_value (struct dir *dir, const char *key);

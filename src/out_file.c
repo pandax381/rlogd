@@ -40,19 +40,23 @@
 #include "rlogd.h"
 #include "common.h"
 
+#define DEFAULT_TIME_FORMAT "%s"
+#define DEFAULT_FORMAT "[$tag] $record"
 #define DEFAULT_PERM_DIRS (00755)
 #define DEFAULT_PERM_FILE (00644)
 
+struct env {
+    char *time_format;
+    char *format;
+    char *path;
+    char *user;
+    int mode;
+    int embed_hostname;
+};
+
 struct context {
     struct module *module;
-    struct {
-        char *time_format;
-        char *format;
-        char *path;
-        char *user;
-        int mode;
-        int embed_hostname;
-    } env;
+    struct env env;
     int fd;
     time_t timestamp;
     char template[PATH_MAX];
@@ -243,10 +247,61 @@ on_shutdown (struct ev_loop *loop, struct ev_async *w, int revents) {
     ev_break(loop, EVBREAK_ALL);
 }
 
+static int
+parse_options (struct env *env, struct dir *dir) {
+    struct param *param;
+    time_t now;
+    char tmp[128], *p;
+
+    TAILQ_FOREACH(param, &dir->params, lp) {
+        if (strcmp(param->key, "type") == 0) {
+            // ignore
+        } else if (strcmp(param->key, "path") == 0) {
+            env->path = param->value;
+        } else if (strcmp(param->key, "time_format") == 0) {
+            env->time_format = param->value;
+            now = time(NULL);
+            strftime(tmp, sizeof(tmp), env->time_format, localtime(&now));
+            if (strcmp(tmp, env->time_format) == 0) {
+                fprintf(stderr, "warning: string of time format could not be found in the 'time_format', line %zu\n", param->line);
+            }
+        } else if (strcmp(param->key, "format") == 0) {
+            env->format = param->value;
+            unescape(env->format, strlen(env->format));
+            if (!strstr(env->format, "$record")) {
+                fprintf(stderr, "warning: $record could not be found in the 'format', line %zu\n", param->line);
+            }
+        } else if (strcmp(param->key, "user") == 0) {
+            env->user = param->value;
+        } else if (strcmp(param->key, "mode") == 0) {
+            env->mode = 0;
+            for (p = param->value; *p; p++) {
+                if (!isodigit(*p)) {
+                    fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                    return -1;
+                }
+                env->mode = (env->mode << 3) | ctoi(*p);
+            }
+            if (!env->mode || env->mode > 0777) {
+                fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                return -1;
+            }
+        } else if (strcmp(param->key, "embed_hostname") == 0) {
+            env->embed_hostname = (strcmp(param->value, "true") == 0) ? 1 : 0;
+        } else {
+            fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
+        }
+    }
+    if (!env->path) {
+        fprintf(stderr, "error: 'path' is required, line %zu\n", dir->line);
+        return -1;
+    }
+    return 0;
+}
+
 int
 out_file_setup (struct module *module, struct dir *dir) {
     struct context *ctx;
-    char *val;
 
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
@@ -255,34 +310,13 @@ out_file_setup (struct module *module, struct dir *dir) {
     }
     memset(ctx, 0, sizeof(*ctx));
     ctx->module = module;
-    ctx->env.time_format = config_dir_get_param_value(dir, "time_format");
-    if (!ctx->env.time_format) {
-        ctx->env.time_format = "%s";
-    }
-    ctx->env.format = config_dir_get_param_value(dir, "format");
-    if (!ctx->env.format) {
-        ctx->env.format = "[$tag] $record";
-    }
-    unescape(ctx->env.format, strlen(ctx->env.format));
-    ctx->env.path = config_dir_get_param_value(dir, "path");
-    if (!ctx->env.path) {
-        fprintf(stderr, "'path' is required\n");
+    ctx->env.time_format = DEFAULT_TIME_FORMAT;
+    ctx->env.format = DEFAULT_FORMAT;
+    ctx->env.mode = DEFAULT_PERM_FILE;
+    if (parse_options(&ctx->env, dir) == -1) {
         free(ctx);
         return -1;
     }
-    ctx->env.user = config_dir_get_param_value(dir, "user");
-    ctx->env.mode = DEFAULT_SOCKET_MODE;
-    val = config_dir_get_param_value(dir, "mode");
-    if (val) {
-        ctx->env.mode = strtol(val, NULL, 8);
-        if (ctx->env.mode == -1) {
-            fprintf(stderr, "'mode' value is invalid\n");
-            free(ctx);
-            return -1;
-        }
-    }
-    val = config_dir_get_param_value(dir, "embed_hostname");
-    ctx->env.embed_hostname = (val && strcmp(val, "true") == 0) ? 1 : 0;
     ctx->fd = -1;
     ctx->loop = ev_loop_new(0);
     if (!ctx->loop) {

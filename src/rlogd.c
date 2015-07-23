@@ -42,9 +42,12 @@
 #define DEFAULT_CONFIG_FILE (SYSCONFDIR "/rlogd.conf")
 #define DEFAULT_PID_FILE (LOCALSTATEDIR "/run/rlogd.pid")
 
+int __dryrun;
+
 typedef struct {
     char *config;
     int debug;
+    int dryrun;
     int foreground;
     char *pid;
     char *_stdout;
@@ -545,6 +548,9 @@ init (option_t *option) {
 
     umask(0);
     sig_ignore(SIGPIPE);
+    if (option->dryrun) {
+        return 0;
+    }
     if (option->_stdout) {
         if ((_stdout = open(option->_stdout, O_WRONLY | O_CREAT | O_APPEND, 00644)) == -1) {
             fprintf(stderr, "%s: Can't open STDOUT redirect file: %s\n", strerror(errno), option->_stdout);
@@ -727,6 +733,7 @@ config_parse (struct config *dst, const char *path) {
             } else {
                 dir->arg = NULL;
             }
+            dir->line = l;
             TAILQ_INIT(&dir->params);
             TAILQ_INIT(&dir->dirs);
             if (parent) {
@@ -761,6 +768,7 @@ config_parse (struct config *dst, const char *path) {
                 fclose(fp);
                 return -1;
             }
+            param->line = l;
             TAILQ_INSERT_TAIL(&dir->params, param, lp);
         } else {
             fprintf(stderr, "unexpected string: line %zu, ignore and continue", l);
@@ -778,6 +786,7 @@ usage (void) {
     printf("    -d, --debug      # enable debug mode\n");
     printf("    -F, --foreground # foreground (not a daemon)\n");
     printf("    -p, --pid=PATH   # PID file (default: %s)\n", DEFAULT_PID_FILE);
+    printf("    -t, --test       # run syntax check for config file\n");
     printf("    -h, --help       # print this message\n");
     printf("    -v, --version    # show version\n");
 }
@@ -795,6 +804,7 @@ option_parse (option_t *dst, int argc, char *argv[]) {
         {"debug",      0, NULL, 'd'},
         {"foreground", 0, NULL, 'F'},
         {"pid",        1, NULL, 'p'},
+        {"test",       0, NULL, 't'},
         {"help",       0, NULL, 'h'},
         {"version",    0, NULL, 'v'},
         { NULL,        0, NULL,  0 }
@@ -802,11 +812,12 @@ option_parse (option_t *dst, int argc, char *argv[]) {
 
     dst->config = DEFAULT_CONFIG_FILE;
     dst->debug = 0;
+    dst->dryrun = 0;
     dst->foreground = 0;
     dst->pid = DEFAULT_PID_FILE;
     dst->_stdout = NULL;
     dst->_stderr = NULL;
-    while ((o = getopt_long_only(argc, argv, "c:dFp:hv", long_options, NULL)) != -1) {
+    while ((o = getopt_long_only(argc, argv, "c:dFp:thv", long_options, NULL)) != -1) {
         switch (o) {
         case 'c':
             dst->config = optarg;
@@ -819,6 +830,9 @@ option_parse (option_t *dst, int argc, char *argv[]) {
             break;
         case 'p':
             dst->pid = optarg;
+            break;
+        case 't':
+            dst->dryrun = 1;
             break;
         case 'h':
             usage();
@@ -835,6 +849,8 @@ option_parse (option_t *dst, int argc, char *argv[]) {
         usage();
         return -1;
     }
+    __debug  = dst->debug;
+    __dryrun = dst->dryrun;
     return 0;
 }
 
@@ -855,12 +871,11 @@ main (int argc, char *argv[]) {
         config_free(&config);
         return -1;
     }
-    if (option.debug) {
-        config_debug(&config);
-    }
     if ((loop = ev_loop_new(0)) == NULL) {
         config_free(&config);
-        unlink(option.pid);
+        if (!option.dryrun) {
+            unlink(option.pid);
+        }
         return -1;
     }
     for (s = signals; s->signum; s++) {
@@ -868,10 +883,19 @@ main (int argc, char *argv[]) {
         ev_signal_start(loop, &s->w);
     }
     if (setup_modules(&config) == -1) {
-        ev_loop_destroy(loop);
         config_free(&config);
-        unlink(option.pid);
+        ev_loop_destroy(loop);
+        if (!option.dryrun) {
+            unlink(option.pid);
+        }
         return -1;
+    }
+    if (option.dryrun) {
+        fprintf(stderr, "Syntax OK\n");
+        revoke_modules();
+        config_free(&config);
+        ev_loop_destroy(loop);
+        return 0;
     }
     run_modules();
     ev_run(loop, 0);
