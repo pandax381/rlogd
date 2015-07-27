@@ -155,11 +155,11 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
                         return;
                     }
                 }
-                fprintf(stderr, "'%.*s' is not match\n", (int)tag_len, tag);
+                warning_print("'%.*s' is not match", (int)tag_len, tag);
                 return;
             }
         }
-        fprintf(stderr, "label '%s' is not found\n", source->label);
+        warning_print("label '%s' is not found", source->label);
         return;
     }
     TAILQ_FOREACH(match, &matches, lp) {
@@ -170,7 +170,7 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
             return;
         }
     }
-    fprintf(stderr, "'%.*s' is not match\n", (int)tag_len, tag);
+    warning_print("'%.*s' is not match", (int)tag_len, tag);
 }
 
 void
@@ -275,21 +275,21 @@ setup_source (struct dir *dir) {
 
     type = config_dir_get_param_value(dir, "type");
     if (!type) {
-        fprintf(stderr, "type is required\n");
+        error_print("module type is required, line %zu", dir->line);
         return NULL;
     }
     module = module_lookup(MODULE_TYPE_INPUT, type);
     if (!module) {
-        fprintf(stderr, "intput module '%s' not found\n", type);
+        error_print("module not found [in_%s]", type);
         return NULL;
     }
     source = (struct source *)malloc(sizeof(struct source));
     if (!source) {
-        fprintf(stderr, "malloc error\n");
+        error_print("malloc error");
         return NULL;
     }
     if (module->setup(&source->ctx, dir) == -1) {
-        fprintf(stderr, "input module '%s' setup error\n", type);
+        error_print("module setup error [in_%s]", type);
         free(source);
         return NULL;
     }
@@ -416,34 +416,34 @@ setup_match (struct dir *dir) {
     int erroff;
 
     if (!dir->arg) {
-        fprintf(stderr, "pattern is required\n");
+        error_print("match pattern is required, line %zu", dir->line);
         return NULL;
     }
     type = config_dir_get_param_value(dir, "type");
     if (!type) {
-        fprintf(stderr, "type is required\n");
+        error_print("module type is required, line %zu", dir->line);
         return NULL;
     }
     module = module_lookup(MODULE_TYPE_OUTPUT, type);
     if (!module) {
-        fprintf(stderr, "output module '%s' not found\n", type);
+        error_print("module not found [out_%s]", type);
         return NULL;
     }
     match = (struct match *)malloc(sizeof(struct match));
     if (!match) {
-        fprintf(stderr, "malloc error\n");
+        error_print("malloc error");
         return NULL;
     }
     memset(&match->reg, 0, sizeof(match->reg));
     convert_regex_pattern(pattern, sizeof(pattern), dir->arg, strlen(dir->arg));
     match->reg = pcre_compile(pattern, 0, &errmsg, &erroff, NULL);
     if (!match->reg) {
-        fprintf(stderr, "pcre_compile: %s\n", errmsg);
+        error_print("pcre_compile: %s, line %zu", errmsg, dir->line);
         free(match);
         return NULL;
     }
     if (module->setup(&match->ctx, dir) == -1) {
-        fprintf(stderr, "output module '%s' setup error\n", type);
+        error_print("module setup error [out_%s]", type);
         pcre_free(match->reg);
         free(match);
         return NULL;
@@ -462,12 +462,12 @@ setup_label (struct dir *dir) {
     struct match *match;
 
     if (!dir->arg) {
-        fprintf(stderr, "pattern is required\n");
+        error_print("label pattern is required, line %zu", dir->line);
         return NULL;
     }
     label = (struct label *)malloc(sizeof(struct label));
     if (!label) {
-        fprintf(stderr, "malloc error\n");
+        error_print("malloc error");
         return NULL;
     }
     TAILQ_INIT(&label->matches);
@@ -475,7 +475,7 @@ setup_label (struct dir *dir) {
     convert_regex_pattern(pattern, sizeof(pattern), dir->arg, strlen(dir->arg));
     label->reg = pcre_compile(pattern, 0, &errmsg, &erroff, NULL);
     if (!label->reg) {
-        fprintf(stderr, "pcre_compile: %s\n", errmsg);
+        error_print("pcre_compile: %s, line %zu", errmsg, dir->line);
         free(label);
         return NULL;
     }
@@ -495,6 +495,9 @@ setup_label (struct dir *dir) {
             TAILQ_INSERT_TAIL(&label->matches, match, lp);
         }
     }
+    if (TAILQ_EMPTY(&label->matches)) {
+        warning_print("match directive does not exist in this label, line %zu", dir->line);
+    }
     return label;
 }
 static int
@@ -512,6 +515,9 @@ setup_modules (struct config *config) {
             }
             TAILQ_INSERT_TAIL(&sources, source, lp);
         }
+    }
+    if (TAILQ_EMPTY(&sources)) {
+        warning_print("source directive does not exist");
     }
     TAILQ_FOREACH(dir, &config->dirs, lp) {
         if (strcmp(dir->name, "match") == 0) {
@@ -537,7 +543,7 @@ setup_modules (struct config *config) {
 static void
 signal_cb (struct ev_loop *loop, struct ev_signal *w, int revents) {
     (void)revents;
-    fprintf(stderr, "Receive Signal: signum=%d\n", w->signum);
+    warning_print("Receive Signal: signum=%d", w->signum);
     ev_break(loop, EVBREAK_ALL);
 }
 
@@ -553,23 +559,23 @@ init (option_t *option) {
     }
     if (option->_stdout) {
         if ((_stdout = open(option->_stdout, O_WRONLY | O_CREAT | O_APPEND, 00644)) == -1) {
-            fprintf(stderr, "%s: Can't open STDOUT redirect file: %s\n", strerror(errno), option->_stdout);
+            error_print("%s [%s]", strerror(errno), option->_stdout);
             goto ERROR;
         }
     }
     if (option->_stderr) {
         if ((_stderr = open(option->_stderr, O_WRONLY | O_CREAT | O_APPEND, 00644)) == -1) {
-            fprintf(stderr, "%s: Can't open STDERR redirect file: %s\n", strerror(errno), option->_stderr);
+            error_print("%s [%s]", strerror(errno), option->_stderr);
             goto ERROR;
         }
     }
     if ((fp = fopen(option->pid, "w")) == NULL) {
-        fprintf(stderr, "%s: Can't open PID file: %s\n", strerror(errno), option->pid);
+        error_print("%s [%s]", strerror(errno), option->pid);
         goto ERROR;
     }
     if (!option->foreground) {
         if (daemonize(NULL, 0) == -1) {
-            fprintf(stderr, "daemonize failure\n");
+            error_print("daemonize failure");
             goto ERROR;
         }
     }
@@ -605,23 +611,24 @@ config_dir_debug (struct dir *dir, int depth) {
     struct dir *child;
 
     if (dir->arg) {
-        fprintf(stderr, "%*s<%s %s>\n", INDENT(depth), "", dir->name, dir->arg);
+        fprintf(stderr, "> %*s<%s %s>\n", INDENT(depth), "", dir->name, dir->arg);
     } else {
-        fprintf(stderr, "%*s<%s>\n", INDENT(depth), "", dir->name);
+        fprintf(stderr, "> %*s<%s>\n", INDENT(depth), "", dir->name);
     }
     TAILQ_FOREACH(param, &dir->params, lp) {
-        fprintf(stderr, "%*s%s %s\n", INDENT(depth + 1), "", param->key, param->value);
+        fprintf(stderr, "> %*s%s %s\n", INDENT(depth + 1), "", param->key, param->value);
     }
     TAILQ_FOREACH(child, &dir->dirs, lp) {
         config_dir_debug(child, depth + 1);
     }
-    fprintf(stderr, "%*s</%s>\n", INDENT(depth), "", dir->name);
+    fprintf(stderr, "> %*s</%s>\n", INDENT(depth), "", dir->name);
 }
 
 void
 config_debug (struct config *config) {
     struct dir *dir;
 
+    fprintf(stderr, "config_debug()\n");
     TAILQ_FOREACH(dir, &config->dirs, lp) {
         config_dir_debug(dir, 0);
     }
@@ -683,7 +690,7 @@ config_parse (struct config *dst, const char *path) {
     struct param *param = NULL;
 
     if ((fp = fopen(path, "r")) == NULL) {
-        fprintf(stderr, "%s: can't open configuration file [%s]\n", strerror(errno), PRINTSTR(path));
+        error_print("%s, file=%s", strerror(errno), PRINTSTR(path));
         return -1;
     }
     TAILQ_INIT(&dst->dirs);
@@ -698,7 +705,7 @@ config_parse (struct config *dst, const char *path) {
                 name = buf + 2;
                 n -= 3; /* '<' & '/' & '>'  */
                 if (!dir || !n || strncmp(name, dir->name, n) != 0) {
-                    fprintf(stderr, "invalid string: line %zu\n", l);
+                    error_print("invalid string, line %zu", l);
                     config_free(dst);
                     fclose(fp);
                     return -1;
@@ -709,7 +716,7 @@ config_parse (struct config *dst, const char *path) {
             parent = dir;
             dir = (struct dir *)malloc(sizeof(struct dir));
             if (!dir) {
-                fprintf(stderr, "malloc error\n");
+                error_print("malloc error");
                 config_free(dst);
                 fclose(fp);
                 return -1;
@@ -720,7 +727,7 @@ config_parse (struct config *dst, const char *path) {
             p = strpbrk(name, " \t");
             dir->name = strtrim(strndup(name, p ? p - name : n));
             if (!dir->name || !dir->name[0]) {
-                fprintf(stderr, "invalid string, line %zu\n", l);
+                error_print("invalid string, line %zu", l);
                 free(dir->name);
                 free(dir);
                 config_free(dst);
@@ -745,14 +752,14 @@ config_parse (struct config *dst, const char *path) {
         }
         if (dir) {
             if ((p = strpbrk(buf, " \t")) == NULL) {
-                fprintf(stderr, "invalid string, line %zu\n", l);
+                error_print("invalid string, line %zu", l);
                 config_free(dst);
                 fclose(fp);
                 return -1;
             }
             param = (struct param *)malloc(sizeof(struct param));
             if (!param) {
-                fprintf(stderr, "malloc error\n");
+                error_print("malloc error");
                 config_free(dst);
                 fclose(fp);
                 return -1;
@@ -760,7 +767,7 @@ config_parse (struct config *dst, const char *path) {
             param->key = strtrim(strndup(buf, p - buf));
             param->value = strtrim(strndup(p + 1, n - ((p + 1) - buf)));
             if (!param->key || !param->value) {
-                fprintf(stderr, "invalid string, line %zu\n", l);
+                error_print("invalid string, line %zu", l);
                 free(param->key);
                 free(param->value);
                 free(param);
@@ -771,7 +778,7 @@ config_parse (struct config *dst, const char *path) {
             param->line = l;
             TAILQ_INSERT_TAIL(&dir->params, param, lp);
         } else {
-            fprintf(stderr, "unexpected string: line %zu, ignore and continue", l);
+            warning_print("unexpected string, line %zu", l);
         }
     }
     fclose(fp);
