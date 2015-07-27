@@ -179,22 +179,28 @@ cancel_modules (void) {
     struct match *match;
     struct label *label;
 
-    while ((source = TAILQ_FIRST(&sources)) != NULL) {
+    TAILQ_FOREACH(source, &sources, lp) {
         source->ctx.cancel(source->ctx.arg);
+    }
+    while ((source = TAILQ_FIRST(&sources)) != NULL) {
         pthread_join(source->thread, NULL);
         TAILQ_REMOVE(&sources, source, lp);
         free(source);
     }
-    while ((match = TAILQ_FIRST(&matches)) != NULL) {
+    TAILQ_FOREACH(match, &matches, lp) {
         match->ctx.cancel(match->ctx.arg);
+    }
+    while ((match = TAILQ_FIRST(&matches)) != NULL) {
         pthread_join(match->thread, NULL);
         TAILQ_REMOVE(&matches, match, lp);
         pcre_free(match->reg);
         free(match);
     }
     while ((label = TAILQ_FIRST(&labels)) != NULL) {
-        while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
+        TAILQ_FOREACH(match, &label->matches, lp) {
             match->ctx.cancel(match->ctx.arg);
+        }
+        while ((match = TAILQ_FIRST(&label->matches)) != NULL) {
             pthread_join(match->thread, NULL);
             TAILQ_REMOVE(&matches, match, lp);
             pcre_free(match->reg);
