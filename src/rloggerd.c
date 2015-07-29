@@ -108,7 +108,7 @@ on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
             }
             n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
             if ((size_t)ctx->parent->opts->chunk < ctx->parent->buffer.len + n) {
-                fprintf(stderr, "warning: entry too long\n");
+                warning_print("warning: entry too long");
                 s = e;
             }
         }
@@ -133,7 +133,7 @@ on_read (struct ev_loop *loop, struct ev_io *w, int revents) {
             if (errno == EINTR) {
                 return;
             }
-            perror("recv");
+            error_print("recv: %s, fd=%d", strerror(errno), w->fd);
         }
         close(w->fd);
         ev_io_stop(loop, w);
@@ -165,12 +165,12 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
 
     soc = accept(w->fd, NULL, NULL);
     if (soc == -1) {
-        perror("accept");
+        error_print("accept: %s, fd=%d", strerror(errno), w->fd);
         return;
     }
     ctx = (struct e_context *)malloc(sizeof(struct e_context));
     if (!ctx) {
-        fprintf(stderr, "malloc error\n");
+        error_print("malloc error");
         close(soc);
         return;
     }
@@ -179,7 +179,7 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     ctx->rbuf.alloc = ctx->parent->opts->chunk;
     ctx->rbuf.data = malloc(ctx->rbuf.alloc);
     if (!ctx->rbuf.data) {
-        fprintf(stderr, "malloc error\n");
+        error_print("malloc error");
         free(ctx);
         close(soc);
         return;
@@ -212,7 +212,7 @@ static void
 on_signal (struct ev_loop *loop, struct ev_signal *w, int revents) {
     struct context *ctx;
 
-    fprintf(stderr, "receive signal: signum=%d\n", w->signum);
+    warning_print("receive signal: signum=%d", w->signum);
     ctx = (struct context *)w->data;
     ctx->terminate = 1;
     ev_break(loop, EVBREAK_ALL);
@@ -233,7 +233,7 @@ wait_ack (struct context *ctx, uint32_t seq) {
             if (ret == 0 || errno == EINTR) {
                 continue;
             }
-            perror("poll");
+            error_print("poll: %s", strerror(errno));
             return -1;
         }
         n = recv(pfd.fd, (char *)&ack + done, sizeof(ack) - done, 0);
@@ -242,12 +242,12 @@ wait_ack (struct context *ctx, uint32_t seq) {
             if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
                 continue;
             }
-            perror("recv");
+            error_print("recv: %s, fd=%d", strerror(errno), pfd.fd);
             return -1;
         case  0:
-            fprintf(stderr, "WARNING: connection close.\n");
+            warning_print("connection closed");
             if (n) {
-                fprintf(stderr, "WARNING: unprocessed %zu bytes data.\n", done);
+                warning_print("unprocessed %zu bytes data", done);
             }
             return -1;
         }
@@ -275,7 +275,7 @@ _sendfile (int out_fd, int in_fd, size_t count) {
                     continue;
                 }
                 // TODO
-                perror("read");
+                error_print("recv: %s, fd=%d", strerror(errno), in_fd);
                 return -1;
             }
             break;
@@ -308,7 +308,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         sleep(1);
         return;
     }
-    fprintf(stderr, "forward_buffer: %s\n", path);
+    warning_print("forward_buffer: %s", path);
     while (1) {
         n = read(fd, &hdr, sizeof(hdr) - done);
         if (n <= 0) {
@@ -316,7 +316,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
                 if (errno == EINTR) {
                     continue;
                 }
-                perror("read");
+                error_print("recv: %s, fd=%d", strerror(errno), fd);
                 close(fd);
                 return;
             }
@@ -336,9 +336,6 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         while (done < len) {
             n = _sendfile(skip ? -1 : w->fd, fd, len - done);
             if (n == -1) {
-                if (errno == EINTR) {
-                    continue;
-                }
                 close(fd);
                 ev_io_stop(loop, w);
                 close(w->fd);
@@ -348,7 +345,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
                 return;
             }
             if (n != (len - done)) {
-                fprintf(stderr, "_sendfile error: n=%zd, (len - done)=%zd\n", n, len - done);
+                error_print("incomplete sendfile, %zd / %zd", n, len - done);
                 close(fd);
                 ev_io_stop(loop, w);
                 close(w->fd);
@@ -401,7 +398,7 @@ on_retry (struct ev_loop *loop, struct ev_timer *w, int revents) {
     setsockopt(soc, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ev_io_init(&ctx->connect.w, on_write, soc, EV_WRITE);
     ev_io_start(loop, &ctx->connect.w);
-    fprintf(stderr, "Connection Established: soc=%d\n", soc);
+    debug_print("connection established, fd=%d", soc);
 }
 
 void *
@@ -426,7 +423,7 @@ thread_main (void *arg) {
         setsockopt(soc, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
         ev_io_init(&ctx->connect.w, on_write, soc, EV_WRITE);
         ev_io_start(loop, &ctx->connect.w);
-        fprintf(stderr, "Connection Established: soc=%d\n", soc);
+        debug_print("connection established, fd=%d", soc);
     }
     ev_run(loop, 0);
     ev_loop_destroy(loop);
@@ -570,7 +567,7 @@ main (int argc, char *argv[]) {
     memset(&ctx, 0, sizeof(ctx));
     ctx.opts = &opts;
     if (buffer_init(&ctx.buffer, opts.buffer) == -1) {
-        fprintf(stderr, "buffer_init: failure\n");
+        error_print("buffer_init: failure");
         return -1;
     }
     soc = setup_server_socket(opts.listen, DEFAULT_RLOGGERD_PORT, SOMAXCONN, 0);

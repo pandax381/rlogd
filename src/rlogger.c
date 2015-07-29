@@ -113,7 +113,7 @@ on_message (struct context *ctx, struct timeval *tstamp, const char *data, size_
             return -1;
         }
         if (!buf_permit(&ctx->sbuf, sizeof(struct entry) + len)) {
-            fprintf(stderr, "send buffer full: entry too long.\n");
+            warning_print("send buffer full: entry too long.");
             return 0; /* ignore error */
         }
     }
@@ -140,7 +140,7 @@ on_stdin_read (struct ev_loop *loop, struct ev_io *w, int revents) {
         return;
     }
     if (buf_full(&ctx->rbuf)) {
-        fprintf(stderr, "receive buffer full: message too long.\n");
+        warning_print("receive buffer full: message too long.");
         ctx->rbuf.len = 0;
         ctx->skip = 1;
     }
@@ -150,7 +150,7 @@ on_stdin_read (struct ev_loop *loop, struct ev_io *w, int revents) {
             if (errno == EINTR) {
                 return;
             }
-            perror("read");
+            error_print("read: %s, fd=%d", strerror(errno), w->fd);
         }
         ev_break(loop, EVBREAK_ALL);
         return;
@@ -193,13 +193,13 @@ on_socket_read (struct ev_loop *loop, struct ev_io *w, int revents) {
             if (errno == EINTR) {
                 return;
             }
-            perror("read");
+            error_print("read: %s, fd=%d", strerror(errno), w->fd);
         }
         ctx->broken = 1;
         ev_break(loop, EVBREAK_ALL);
         return;
     }
-    fprintf(stderr, "unknown '%zu' bytes data receive via socket.\n", n);
+    warning_print("unknown '%zu' bytes data receive via socket.", n);
 }
 
 static void
@@ -223,7 +223,7 @@ on_timer (struct ev_loop *loop, struct ev_timer *w, int revents) {
 
 static void
 on_signal (struct ev_loop *loop, struct ev_signal *w, int revents) {
-    fprintf(stderr, "receive signal: signum=%d\n", w->signum);
+    warning_print("receive signal: signum=%d", w->signum);
     ev_break(loop, EVBREAK_ALL);
 }
 
@@ -246,7 +246,7 @@ on_timeout (struct ev_loop *loop, struct ev_timer *w, int revents) {
     ctx->fd = -1;
     ev_timer_stop(loop, w);
     ev_break(loop, EVBREAK_ALL);
-    fprintf(stderr, "Connection timed out\n");
+    warning_print("connection timed out");
 }
 
 static void
@@ -261,7 +261,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     errlen = sizeof(err);
     if (getsockopt(w->fd, SOL_SOCKET, SO_ERROR, &err, &errlen) == -1) {
-        fprintf(stderr, "getsockpot: %s\n", strerror(errno));
+        error_print("getsockpot: %s", strerror(errno));
         close(w->fd);
         ev_io_stop(loop, w);
         ctx->fd = -1;
@@ -269,7 +269,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
         return;
     }
     if (err) {
-        fprintf(stderr, "connect: %s\n", strerror(err));
+        error_print("connect: %s", strerror(err));
         close(w->fd);
         ev_io_stop(loop, w);
         ctx->fd = -1;
@@ -278,14 +278,14 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     opt = 0;
     if (ioctl(w->fd, FIONBIO, &opt) == -1) {
-        perror("ioctl [FIONBIO]");
+        error_print("ioctl [FIONBIO]: %s", strerror(errno));
         close(w->fd);
         ev_io_stop(loop, w);
         ctx->fd = -1;
         ev_break(loop, EVBREAK_ALL);
         return;
     }
-    fprintf(stderr, "Connection Established: soc=%d\n", w->fd);
+    debug_print("connection established, fd=%d\n", w->fd);
     ev_break(loop, EVBREAK_ALL);
 }
 
@@ -464,7 +464,7 @@ main (int argc, char *argv[]) {
         return -1;
     }
     if (!ctx.skip && !buf_empty(&ctx.rbuf)) {
-        fprintf(stderr, "Incomplete data of '%zu' bytes in the receive buffer is left.\n", ctx.rbuf.len);
+        debug_print("Incomplete data of '%zu' bytes in the receive buffer is left.", ctx.rbuf.len);
     }
     if (!buf_empty(&ctx.sbuf)) {
         on_flush(&ctx);
