@@ -65,33 +65,34 @@ buffer_init (struct buffer *buffer, const char *base) {
         mkdir_p(buffer->base, NULL, DEFAULT_PERM_DIRS);
         fd = open(buffer->file, O_RDWR | O_CREAT | O_EXCL, 00644);
         if (fd == -1) {
-            fprintf(stderr, "open: %s, file=%s\n", strerror(errno), buffer->file);
+            error_print("open: %s, file=%s", strerror(errno), buffer->file);
             return -1;
         }
         if (lseek(fd, sizeof(struct position) - 1, SEEK_SET) == -1) {
-            fprintf(stderr, "lseek: %s, file=%s\n", strerror(errno), buffer->file);
+            error_print("lseek: %s, file=%s", strerror(errno), buffer->file);
             close(fd);
             return -1;
         }
         if (writen(fd, &c, sizeof(c)) == -1) {
-            fprintf(stderr, "write: %s, file=%s\n", strerror(errno), buffer->file);
+            error_print("write: %s, file=%s", strerror(errno), buffer->file);
             close(fd);
             return -1;
         }
     }
     if (fstat(fd, &st) == -1) {
-        fprintf(stderr, "fstat: %s, file=%s\n", strerror(errno), buffer->file);
+        error_print("fstat: %s, file=%s", strerror(errno), buffer->file);
         close(fd);
         return -1;
     }
     if (st.st_size != sizeof(struct position)) {
+        error_print("file size check error");
         close(fd);
         return -1;
     }
     buffer->size = st.st_size;
     buffer->cursor = mmap(NULL, buffer->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (buffer->cursor == MAP_FAILED) {
-        fprintf(stderr, "mmap: %s, file=%s, size=%lld\n", strerror(errno), buffer->file, buffer->size);
+        error_print("mmap: %s, file=%s, size=%lld", strerror(errno), buffer->file, buffer->size);
         close(fd);
         return -1;
     }
@@ -107,7 +108,7 @@ buffer_create (struct buffer *buffer) {
     snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
     buffer->fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
     if (buffer->fd == -1) {
-        fprintf(stderr, "open: %s, path=%s\n", strerror(errno), path);
+        error_print("open: %s, path=%s", strerror(errno), path);
         return -1;
     }
     return 0;
@@ -135,7 +136,7 @@ buffer_flush (struct buffer *buffer) {
 
     snprintf(tmp, sizeof(tmp), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
     snprintf(path, sizeof(path), "%s/%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
-    fprintf(stderr, "flush_buffer: %s\n", path);
+    debug_print("buffer_flush: %s", path);
     rename(tmp, path);
     close(buffer->fd);
     buffer->cursor->wb++;
@@ -185,7 +186,7 @@ buffer_terminate (struct buffer *buffer) {
     }
     if (buffer->cursor) {
         if (munmap(buffer->cursor, buffer->size) == -1) {
-            perror("munmap");
+            warning_print("munmap: %s", strerror(errno));
         }
         buffer->cursor = NULL;
         buffer->size = 0;

@@ -617,24 +617,24 @@ config_dir_debug (struct dir *dir, int depth) {
     struct dir *child;
 
     if (dir->arg) {
-        fprintf(stderr, "> %*s<%s %s>\n", INDENT(depth), "", dir->name, dir->arg);
+        fprintf(stderr, "%*s<%s %s>\n", INDENT(depth), "", dir->name, dir->arg);
     } else {
-        fprintf(stderr, "> %*s<%s>\n", INDENT(depth), "", dir->name);
+        fprintf(stderr, "%*s<%s>\n", INDENT(depth), "", dir->name);
     }
     TAILQ_FOREACH(param, &dir->params, lp) {
-        fprintf(stderr, "> %*s%s %s\n", INDENT(depth + 1), "", param->key, param->value);
+        fprintf(stderr, "%*s%s %s\n", INDENT(depth + 1), "", param->key, param->value);
     }
     TAILQ_FOREACH(child, &dir->dirs, lp) {
         config_dir_debug(child, depth + 1);
     }
-    fprintf(stderr, "> %*s</%s>\n", INDENT(depth), "", dir->name);
+    fprintf(stderr, "%*s</%s>\n", INDENT(depth), "", dir->name);
 }
 
 void
 config_debug (struct config *config) {
     struct dir *dir;
 
-    fprintf(stderr, "config_debug()\n");
+    fprintf(stderr, "# parsed configuration file [%s]\n", config->path);
     TAILQ_FOREACH(dir, &config->dirs, lp) {
         config_dir_debug(dir, 0);
     }
@@ -695,8 +695,9 @@ config_parse (struct config *dst, const char *path) {
     struct dir *parent, *dir = NULL;
     struct param *param = NULL;
 
-    if ((fp = fopen(path, "r")) == NULL) {
-        error_print("%s, file=%s", strerror(errno), PRINTSTR(path));
+    dst->path = (char *)path;
+    if ((fp = fopen(dst->path, "r")) == NULL) {
+        error_print("%s, file=%s", strerror(errno), PRINTSTR(dst->path));
         return -1;
     }
     TAILQ_INIT(&dst->dirs);
@@ -879,6 +880,9 @@ main (int argc, char *argv[]) {
     }
     if (config_parse(&config, option.config) == -1) {
         return -1;
+    }
+    if (option.debug) {
+        config_debug(&config);
     }
     if (init(&option) == -1) {
         config_free(&config);

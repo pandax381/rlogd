@@ -146,7 +146,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
             }
             n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
             if (ctx->env.limit < ctx->buffer.len + n) {
-                fprintf(stderr, "warning: entry too long\n");
+                warning_print("entry too long");
                 s = e;
             }
         }
@@ -171,7 +171,7 @@ wait_ack (struct context *ctx, uint32_t seq) {
             if (ret == 0 || errno == EINTR) {
                 continue;
             }
-            perror("poll");
+            error_print("poll: %s", strerror(errno));
             return -1;
         }
         n = recv(pfd.fd, (char *)&ack + done, sizeof(ack) - done, 0);
@@ -180,12 +180,12 @@ wait_ack (struct context *ctx, uint32_t seq) {
             if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
                 continue;
             }
-            perror("recv");
+            error_print("recv: %s, fd=%d", strerror(errno), pfd.fd);
             return -1;
         case  0:
-            fprintf(stderr, "WARNING: connection close.\n");
+            warning_print("connection closed");
             if (n) {
-                fprintf(stderr, "WARNING: unprocessed %zu bytes data.\n", done);
+                warning_print("unprocessed %zu bytes data", done);
             }
             return -1;
         }
@@ -213,12 +213,14 @@ _sendfile (int out_fd, int in_fd, size_t count) {
                     continue;
                 }
                 // TODO
-                perror("read");
+                error_print("read: %s, %d", strerror(errno), in_fd);
                 return -1;
             }
             break;
         }
-        writen(out_fd, buf, n);
+        if (out_fd != -1) {
+            writen(out_fd, buf, n);
+        }
         done += n;
     }
     return done;
@@ -244,7 +246,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         sleep(1);
         return;
     }
-    fprintf(stderr, "forward_buffer: %s\n", path);
+    debug_print("forward_buffer: %s", path);
     while (1) {
         n = read(fd, &hdr, sizeof(hdr) - done);
         if (n <= 0) {
@@ -252,7 +254,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
                 if (errno == EINTR) {
                     continue;
                 }
-                perror("read");
+                error_print("read: %s, fd=%d", strerror(errno), fd);
                 close(fd);
                 return;
             }
@@ -272,9 +274,6 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         while (done < len) {
             n = _sendfile(skip ? -1 : w->fd, fd, len - done);
             if (n == -1) {
-                if (errno == EINTR) {
-                    continue;
-                }
                 close(fd);
                 ev_io_stop(loop, w);
                 close(w->fd);
@@ -283,7 +282,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
                 return;
             }
             if (n != (len - done)) {
-                fprintf(stderr, "_sendfile error: n=%zd, (len - done)=%zd\n", n, len - done);
+                error_print("incomplete sendfile, %zd / %zd", n, len - done);
                 close(fd);
                 ev_io_stop(loop, w);
                 close(w->fd);
@@ -323,7 +322,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
     ctx = (struct context *)w->data;
     errlen = sizeof(err);
     if (getsockopt(w->fd, SOL_SOCKET, SO_ERROR, &err, &errlen) == -1) {
-        fprintf(stderr, "getsockpot: %s\n", strerror(errno));
+        error_print("getsockpot: %s, target=%s, fd=%d", strerror(errno), ctx->env.target, w->fd);
         ev_io_stop(loop, w);
         close(w->fd);
         w->fd = -1;
@@ -331,7 +330,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
         return;
     }
     if (err) {
-        fprintf(stderr, "connect: %s, target=%s\n", strerror(err), ctx->env.target);
+        error_print("connect: %s, target=%s, fd=%d", strerror(err), ctx->env.target, w->fd);
         ev_io_stop(loop, w);
         close(w->fd);
         w->fd = -1;
@@ -340,7 +339,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     opt = 0;
     if (ioctl(w->fd, FIONBIO, &opt) == -1) {
-        perror("ioctl [FIONBIO]");
+        error_print("ioctl [FIONBIO]: %s, target=%s, fd=%d", strerror(errno), ctx->env.target, w->fd);
         ev_io_stop(loop, w);
         close(w->fd);
         w->fd = -1;
@@ -349,7 +348,7 @@ on_connect (struct ev_loop *loop, struct ev_io *w, int revents) {
     opt = 1;
     setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ev_set_cb(w, on_write);
-    fprintf(stderr, "Connection Established: soc=%d\n", w->fd);
+    debug_print("connection established, target=%s, fd=%d", ctx->env.target, w->fd);
 }
 
 static void
@@ -402,27 +401,27 @@ parse_options (struct env *env, struct dir *dir) {
         } else if (strcmp(param->key, "buffer_chunk_limit") == 0) {
             val = strtol(param->value, &endptr, 10);
             if (val < 0 || *endptr != '\0') {
-                fprintf(stderr, "error: value of 'buffer_chunk_limit' is invalid, line %zu\n", param->line);
+                error_print("value of 'buffer_chunk_limit' is invalid, line %zu", param->line);
                 return -1;
             }
             env->limit = val;
         } else if (strcmp(param->key, "flush_interval") == 0) {
             val = strtol(param->value, &endptr, 10);
             if (val < 0 || *endptr) {
-                fprintf(stderr, "error: value of 'flush_interval' is invalid, line %zu\n", param->line);
+                error_print("value of 'flush_interval' is invalid, line %zu", param->line);
                 return -1;
             }
             env->interval = val;
         } else {
-            fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
+            warning_print("unknown parameter, line %zu", param->line);
         }
     }
     if (!env->buffer) {
-        fprintf(stderr, "error: 'buffer' is required, line %zu\n", dir->line);
+        error_print("'buffer' is required, line %zu", dir->line);
         return -1;
     }
     if (!env->target) {
-        fprintf(stderr, "error: 'target' is required, line %zu\n", dir->line);
+        error_print("'target' is required, line %zu", dir->line);
         return -1;
     }
     return 0;
@@ -435,6 +434,7 @@ out_forward_setup (struct module *module, struct dir *dir) {
 
     ctx = (struct context *)malloc(sizeof(struct context));
     if (!ctx) {
+        error_print("malloc error");
         return -1;
     }
     ctx->terminate = 0;
@@ -450,7 +450,7 @@ out_forward_setup (struct module *module, struct dir *dir) {
         ctx->buffer.cursor = NULL;
     } else {
         if (buffer_init(&ctx->buffer, ctx->env.buffer) == -1) {
-            fprintf(stderr, "position file load error\n");
+            error_print("position file load error");
             free(ctx);
             return -1;
         }
@@ -460,6 +460,7 @@ out_forward_setup (struct module *module, struct dir *dir) {
         if (!__dryrun) {
             buffer_terminate(&ctx->buffer);
         }
+        error_print("ev_loop_new: error");
         free(ctx);
         return -1;
     }

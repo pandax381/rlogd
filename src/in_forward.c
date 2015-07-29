@@ -123,7 +123,7 @@ on_message (struct e_context *ctx, struct hdr *hdr) {
         ack.len = 0;
         n = writen(ctx->w.fd, &ack, sizeof(ack));
         if (n != sizeof(ack)) {
-            fprintf(stderr, "send ack error\n");
+            error_print("send-back ACK message: error, fd=%d", ctx->w.fd);
             return -1;
         }
     }
@@ -144,7 +144,7 @@ on_read (struct ev_loop *loop, struct ev_io *w, int revents) {
             if (errno == EINTR) {
                 return;
             }
-            perror("recv");
+            error_print("recv: %s, fd=%d", strerror(errno), w->fd);
         }
         LIST_REMOVE(ctx, lp);
         close(w->fd);
@@ -176,12 +176,12 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
 
     soc = accept(w->fd, NULL, NULL);
     if (soc == -1) {
-        perror("accept");
+        warning_print("accept: %s, fd=%d", strerror(errno), w->fd);
         return;
     }
     opt = 1;
     if (ioctl(soc, FIONBIO, &opt) == -1) {
-        perror("ioctl");
+        error_print("ioctl [FIONBIO]: %s, fd=%d", strerror(errno), soc);
         close(soc);
         return;
     }
@@ -189,7 +189,7 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     setsockopt(w->fd, SOL_TCP, TCP_NODELAY, &opt, sizeof(opt)); // ignore error
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
-        fprintf(stderr, "malloc: error\n");
+        error_print("malloc: error");
         close(soc);
         return;
     }
@@ -198,7 +198,7 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     ctx->rbuf.alloc = ctx->parent->env.limit;
     ctx->rbuf.data = malloc(ctx->rbuf.alloc);
     if (!ctx->rbuf.data) {
-        fprintf(stderr, "malloc: error\n");
+        error_print("malloc: error");
         close(soc);
         free(ctx);
         return;
@@ -207,7 +207,7 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
     ev_io_init(&ctx->w, on_read, soc, EV_READ);
     ev_io_start(loop, &ctx->w);
     LIST_INSERT_HEAD(&ctx->parent->head, ctx, lp);
-    fprintf(stderr, "in_forward: Accepted new connection, fd=%d\n", soc);
+    debug_print("accepted new connection, fd=%d, via=%d", soc, w->fd);
 }
 
 static int
@@ -226,21 +226,21 @@ parse_params (struct env *env, struct dir *dir) {
             env->mode = 0;
             for (p = param->value; *p; p++) {
                 if (!isodigit(*p)) {
-                    fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                    error_print("value of 'mode' is invalid, line %zu", param->line);
                     return -1;
                 }
                 env->mode = (env->mode << 3) | ctoi(*p);
             }
             if (!env->mode || env->mode > 0777) {
-                fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                error_print("value of 'mode' is invalid, line %zu", param->line);
                 return -1;
             }
         } else {
-            fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
+            warning_print("unknown parameter, line %zu", param->line);
         }
     }
     if (!env->bind) {
-        fprintf(stderr, "error: 'bind' is required, line %zu\n", dir->line);
+        error_print("'bind' is required, line %zu", dir->line);
         return -1;
     }
     return 0;
@@ -253,7 +253,7 @@ in_forward_setup (struct module *module, struct dir *dir) {
 
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
-        fprintf(stderr, "malloc: error\n");
+        error_print("malloc: error");
         return -1;
     }
     ctx->module = module;
@@ -268,13 +268,13 @@ in_forward_setup (struct module *module, struct dir *dir) {
     } else {
         soc = setup_server_socket(ctx->env.bind, DEFAULT_RLOGD_PORT, SOMAXCONN, 0);
         if (soc == -1) {
-            fprintf(stderr, "setup_server_socket: error\n");
+            error_print("setup_server_socket: error");
             free(ctx);
             return -1;
         }
         if (strncmp(ctx->env.bind, "unix://", 7) == 0) {
             if (chperm(ctx->env.bind + 7, ctx->env.user, ctx->env.mode) == -1) {
-                fprintf(stderr, "chperm: error\n");
+                error_print("chperm: error");
                 close(soc);
                 free(ctx);
                 return -1;
@@ -283,7 +283,7 @@ in_forward_setup (struct module *module, struct dir *dir) {
     }
     ctx->loop = ev_loop_new(0);
     if (!ctx->loop) {
-        fprintf(stderr, "ev_loop_new: error\n");
+        error_print("ev_loop_new: error");
         close(soc);
         free(ctx);
         return -1;

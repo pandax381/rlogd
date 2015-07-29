@@ -52,6 +52,7 @@ struct dir {
 };
 
 struct config {
+    char *path;
     TAILQ_HEAD(/**/, dir) dirs;
 };
 

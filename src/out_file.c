@@ -144,13 +144,13 @@ reopenfile (struct context *ctx) {
         }
         ctx->fd = open(ctx->path, O_WRONLY | O_CREAT | O_APPEND, ctx->env.mode);
         if (ctx->fd == -1) {
-            fprintf(stderr, "%s: %s\n", strerror(errno), ctx->path);
+            error_print("open: %s [%s]", strerror(errno), ctx->path);
             return -1;
         }
+        debug_print("open: success [%s], fd=%d", ctx->path, ctx->fd);
         if (ctx->env.user) {
             chperm(ctx->path, ctx->env.user, ctx->env.mode);
         }
-        fprintf(stderr, "Open file, path=%s, fd=%d\n", ctx->path, ctx->fd);
     }
     return 0;
 }
@@ -206,7 +206,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
         table[3].vlen = ntohl(entry->len);
         n = format(buf, sizeof(buf), ctx->env.format, table);
         if (n == -1) {
-            fprintf(stderr, "entry message too long\n");
+            warning_print("entry message too long");
             return;
         }
         buf[n++] = '\n';
@@ -263,13 +263,13 @@ parse_options (struct env *env, struct dir *dir) {
             now = time(NULL);
             strftime(tmp, sizeof(tmp), env->time_format, localtime(&now));
             if (strcmp(tmp, env->time_format) == 0) {
-                fprintf(stderr, "warning: string of time format could not be found in the 'time_format', line %zu\n", param->line);
+                warning_print("string of time format could not be found in the 'time_format', line %zu", param->line);
             }
         } else if (strcmp(param->key, "format") == 0) {
             env->format = param->value;
             unescape(env->format, strlen(env->format));
             if (!strstr(env->format, "$record")) {
-                fprintf(stderr, "warning: $record could not be found in the 'format', line %zu\n", param->line);
+                warning_print("$record could not be found in the 'format', line %zu", param->line);
             }
         } else if (strcmp(param->key, "user") == 0) {
             env->user = param->value;
@@ -277,23 +277,23 @@ parse_options (struct env *env, struct dir *dir) {
             env->mode = 0;
             for (p = param->value; *p; p++) {
                 if (!isodigit(*p)) {
-                    fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                    error_print("value of 'mode' is invalid, line %zu", param->line);
                     return -1;
                 }
                 env->mode = (env->mode << 3) | ctoi(*p);
             }
             if (!env->mode || env->mode > 0777) {
-                fprintf(stderr, "error: value of 'mode' is invalid, line %zu\n", param->line);
+                error_print("value of 'mode' is invalid, line %zu", param->line);
                 return -1;
             }
         } else if (strcmp(param->key, "embed_hostname") == 0) {
             env->embed_hostname = (strcmp(param->value, "true") == 0) ? 1 : 0;
         } else {
-            fprintf(stderr, "warning: unknown parameter, line %zu\n", param->line);
+            warning_print("unknown parameter, line %zu", param->line);
         }
     }
     if (!env->path) {
-        fprintf(stderr, "error: 'path' is required, line %zu\n", dir->line);
+        error_print("'path' is required, line %zu", dir->line);
         return -1;
     }
     return 0;
@@ -305,7 +305,7 @@ out_file_setup (struct module *module, struct dir *dir) {
 
     ctx = malloc(sizeof(*ctx));
     if (!ctx) {
-        fprintf(stderr, "malloc: error\n");
+        error_print("malloc: error");
         return -1;
     }
     memset(ctx, 0, sizeof(*ctx));
@@ -320,7 +320,7 @@ out_file_setup (struct module *module, struct dir *dir) {
     ctx->fd = -1;
     ctx->loop = ev_loop_new(0);
     if (!ctx->loop) {
-        fprintf(stderr, "ev_loop_new: error\n");
+        error_print("ev_loop_new: error");
         free(ctx);
         return -1;
     }

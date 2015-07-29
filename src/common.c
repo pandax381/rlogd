@@ -197,13 +197,13 @@ setup_unix_client_socket (const char *path, int nonblock) {
 
     soc = socket(AF_UNIX, SOCK_STREAM, 0);
     if (soc == -1) {
-        perror("socket");
+        warning_print("socket: %s", strerror(errno));
         return -1;
     }
     if (nonblock) {
         opt = 1;
         if (ioctl(soc, FIONBIO, &opt) == -1) {
-            perror("ioctl [FIONBIO]");
+            warning_print("ioctl [FIONBIO]: %s", strerror(errno));
             close(soc);
             return -1;
         }
@@ -212,7 +212,7 @@ setup_unix_client_socket (const char *path, int nonblock) {
     strcpy(addr.sun_path, path);
     if (connect(soc, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         if (!nonblock || errno != EINPROGRESS) {
-            fprintf(stderr, "connect: %s, path=%s\n", strerror(errno), path);
+            warning_print("connect: %s, path=%s", strerror(errno), path);
             close(soc);
             return -1;
         }
@@ -230,26 +230,26 @@ setup_tcp_client_socket (const char *host, const char *port, int nonblock) {
     hints.ai_socktype = SOCK_STREAM;
     err = getaddrinfo(host, port, &hints, &ais);
     if (err) {
-        fprintf(stderr, "getaddrinfo: %s, host=%s, port=%s\n", gai_strerror(err), PRINTSTR(host), PRINTSTR(port));
+        warning_print("getaddrinfo: %s, host=%s, port=%s", gai_strerror(err), PRINTSTR(host), PRINTSTR(port));
         return -1;
     }
     for (ai = ais; ai; ai = ai->ai_next) {
         soc = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (soc == -1) {
-            perror("socket");
+            warning_print("socket: %s", strerror(errno));
             continue;
         }
         if (nonblock) {
             opt = 1;
             if (ioctl(soc, FIONBIO, &opt) == -1) {
-                perror("ioctl [FIONBIO]");
+                warning_print("ioctl [FIONBIO]: %s", strerror(errno));
                 close(soc);
                 continue;
             }
         }
         if (connect(soc, ai->ai_addr, ai->ai_addrlen) == -1) {
             if (!nonblock || errno != EINPROGRESS) {
-                perror("connect");
+                warning_print("connect: %s, host=%s, port=%s", strerror(errno), PRINTSTR(host), PRINTSTR(port));
                 close(soc);
                 continue;
             }
@@ -258,6 +258,7 @@ setup_tcp_client_socket (const char *host, const char *port, int nonblock) {
         return soc;
     }
     freeaddrinfo(ais);
+    warning_print("Can't create any client sockets");
     return -1;
 }
 
@@ -296,13 +297,13 @@ setup_unix_server_socket (const char *path, int backlog, int nonblock) {
 
     soc = socket(AF_UNIX, SOCK_STREAM, 0);
     if (soc == -1) {
-        perror("socket");
+        warning_print("socket: %s", strerror(errno));
         return -1;
     }
     if (nonblock) {
         opt = 1;
         if (ioctl(soc, FIONBIO, &opt) == -1) {
-            perror("ioctl [FIONBIO]");
+            warning_print("ioctl [FIONBIO]: %s", strerror(errno));
             close(soc);
             return -1;
         }
@@ -310,12 +311,12 @@ setup_unix_server_socket (const char *path, int backlog, int nonblock) {
     addr.sun_family = AF_UNIX;
     strcpy(addr.sun_path, path);
     if (bind(soc, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        fprintf(stderr, "bind: %s, path=%s\n", strerror(errno), path);
+        warning_print("bind: %s, path=%s", strerror(errno), path);
         close(soc);
         return -1;
     }
     if (listen(soc, backlog) == -1) {
-        fprintf(stderr, "listen: %s, path=%s\n", strerror(errno), path);
+        warning_print("listen: %s, path=%s", strerror(errno), path);
         close(soc);
         return -1;
     }
@@ -333,26 +334,26 @@ setup_tcp_server_socket (const char *host, const char *port, int backlog, int no
     hints.ai_flags = AI_PASSIVE,
     err = getaddrinfo(host, port, &hints, &ais);
     if (err) {
-        fprintf(stderr, "getaddrinfo: %s, host=%s, port=%s\n", gai_strerror(err), PRINTSTR(host), PRINTSTR(port));
+        warning_print("getaddrinfo: %s, host=%s, port=%s", gai_strerror(err), PRINTSTR(host), PRINTSTR(port));
         return -1;
     }
     for (ai = ais; ai; ai = ai->ai_next) {
         soc = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (soc == -1) {
-            perror("socket");
+            warning_print("socket: %s", strerror(errno));
             continue;
         }
         if (nonblock) {
             opt = 1;
             if (ioctl(soc, FIONBIO, &opt) == -1) {
-                perror("ioctl [FIONBIO]");
+                warning_print("ioctl [FIONBIO]: %s", strerror(errno));
                 close(soc);
                 continue;
             }
         }
         opt = 1;
         if (setsockopt(soc, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-            perror("setsockopt [SO_REUSEADDR]");
+            warning_print("setsockopt [SO_REUSEADDR]: %s", strerror(errno));
             close(soc);
             continue;
         }
@@ -360,19 +361,19 @@ setup_tcp_server_socket (const char *host, const char *port, int backlog, int no
         if (ai->ai_family == AF_INET6) {
             opt = 1;
             if (setsockopt(soc, IPPROTO_IPV6, IPV6_V6ONLY, &opt, sizeof(opt)) == -1) {
-                perror("setsockopt [IPV6_V6ONLY]");
+                warning_print("setsockopt [IPV6_V6ONLY]: %s", strerror(errno));
                 close(soc);
                 continue;
             }
         }
 #endif
         if (bind(soc, ai->ai_addr, ai->ai_addrlen) == -1) {
-            perror("bind");
+            warning_print("bind: %s", strerror(errno));
             close(soc);
             continue;
         }
         if (listen(soc, backlog) == -1) {
-            perror("listen");
+            warning_print("listen: %s", strerror(errno));
             close(soc);
             continue;
         }
@@ -380,6 +381,7 @@ setup_tcp_server_socket (const char *host, const char *port, int backlog, int no
         return soc;
     }
     freeaddrinfo(ais);
+    warning_print("Can't create any server sockets");
     return -1;
 }
 
@@ -397,7 +399,7 @@ writen (int fd, const void *buf, size_t n) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 return (ssize_t)done;
             }
-            perror("writen");
+            warning_print("write: %s", strerror(errno));
             return -1;
         } else {
             done += ret;
@@ -431,7 +433,7 @@ writevn (int fd, struct iovec *iov, size_t n) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 return (ssize_t)done;
             }
-            perror("writev");
+            warning_print("writev: %s", strerror(errno));
             return -1;
         }
         done += ret;
@@ -464,14 +466,15 @@ daemonize (const char *dir, int noclose) {
     int fd;
 
     if (fork_and_exit() == -1) {
-        perror("fork");
+        warning_print("fork: %s", strerror(errno));
         return -1;
     }
     if (setsid() == -1) {
+        warning_print("setsid: %s", strerror(errno));
         return -1;
     }
     if (fork_and_exit() == -1) {
-        perror("fork");
+        warning_print("fork: %s", strerror(errno));
         return -1;
     }
     if (dir) {
@@ -479,7 +482,7 @@ daemonize (const char *dir, int noclose) {
     }
     if (!noclose) {
         if ((fd = open("/dev/null", O_RDWR)) == -1) {
-            perror("open");
+            warning_print("open: %s", strerror(errno));
             return -1;
         }
         dup2(fd, STDIN_FILENO);
@@ -497,7 +500,7 @@ chperm (const char *path, const char *user, mode_t mode) {
     struct passwd *p;
 
     if (chmod(path, mode) == -1) {
-        perror("chmod");
+        warning_print("chperm: %s", strerror(errno));
         return -1;
     }
     if (user) {
@@ -505,14 +508,14 @@ chperm (const char *path, const char *user, mode_t mode) {
         p = getpwnam(user);
         if (!p) {
             if (errno) {
-                perror("getpwnam");
+                warning_print("getpwnam: %s", strerror(errno));
             } else {
-                fprintf(stderr, "getpwnam: not found");
+                warning_print("getpwnam: not found");
             }
             return -1;
         }
         if (chown(path, p->pw_uid, p->pw_gid) == -1) {
-            perror("chown");
+            warning_print("chown: %s", strerror(errno));
             return -1;
         }
     }
@@ -605,7 +608,7 @@ unescape (char *str, size_t len) {
             *dp++ = num;
             break;
         default:
-            fprintf(stderr, "'\\%c' is unsupported escape sequence\n", sp[1]);
+            warning_print("'\\%c' is unsupported escape sequence", sp[1]);
             break;
         }
         ep = sp + esc;
