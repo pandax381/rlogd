@@ -69,7 +69,7 @@ extern int __debug;
     __print("warning", __VA_ARGS__);
 #define debug_print(...) \
     if (__debug) \
-        __print("degug", __VA_ARGS__);
+        __print("debug", __VA_ARGS__);
 
 struct string {
     char *text;
