@@ -313,7 +313,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         sleep(1);
         return;
     }
-    warning_print("forward buffer: %s", path);
+    debug_print("forward buffer: %s", path);
     while (1) {
         n = read(fd, &hdr, sizeof(hdr) - done);
         if (n <= 0) {
@@ -535,6 +535,7 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
         usage();
         return -1;
     }
+    __debug  = opts->debug;
     return 0;
 }
 
