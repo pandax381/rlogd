@@ -94,6 +94,7 @@ on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
     tag = (char *)(hdr + 1);
     tag_len = ntohs(hdr->off) - sizeof(struct hdr);
     s = e = (struct entry *)(tag + tag_len);
+    pthread_mutex_lock(&ctx->parent->buffer.mutex);
     while ((caddr_t)e < (caddr_t)hdr + len) {
         n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
         if ((size_t)ctx->parent->opts->chunk < ctx->parent->buffer.len + n) {
@@ -117,6 +118,7 @@ on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
     if (e != s) {
         buffer_write(&ctx->parent->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s);
     }
+    pthread_mutex_unlock(&ctx->parent->buffer.mutex);
 }
 
 static void
@@ -196,7 +198,9 @@ on_timer (struct ev_loop *loop, struct ev_timer *w, int revents) {
     struct timeval now, diff;
 
     ctx = (struct context *)w->data;
+    pthread_mutex_lock(&ctx->buffer.mutex);
     if (!ctx->buffer.len || ctx->buffer.cursor->rb != ctx->buffer.cursor->wb) {
+        pthread_mutex_unlock(&ctx->buffer.mutex);
         return;
     }
     gettimeofday(&now, NULL);
@@ -206,6 +210,7 @@ on_timer (struct ev_loop *loop, struct ev_timer *w, int revents) {
             // TODO
         }
     }
+    pthread_mutex_unlock(&ctx->buffer.mutex);
 }
 
 static void
@@ -308,7 +313,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         sleep(1);
         return;
     }
-    warning_print("forward_buffer: %s", path);
+    warning_print("forward buffer: %s", path);
     while (1) {
         n = read(fd, &hdr, sizeof(hdr) - done);
         if (n <= 0) {
@@ -375,6 +380,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     close(fd);
     ctx->buffer.cursor->rb++;
+    debug_print("unlink buffer: %s, next=%u", path, ctx->buffer.cursor->rb);
     unlink(path);
 }
 
@@ -534,9 +540,7 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
 
 static void
 terminate (struct context *ctx) {
-    if (ctx->buffer.len && ctx->buffer.fd != -1) {
-        close(ctx->buffer.fd);
-    }
+    buffer_terminate(&ctx->buffer);
     if (strncmp(ctx->opts->listen, "unix://", 7) == 0) {
         unlink(ctx->opts->listen + 7);
     }

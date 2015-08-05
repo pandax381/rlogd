@@ -131,6 +131,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
     size_t n;
 
     ctx = (struct context *)arg;
+    pthread_mutex_lock(&ctx->buffer.mutex);
     for (s = e = (struct entry *)entries; (caddr_t)e < (caddr_t)entries + len; e = NEXT_ENTRY(e)) {
         n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
         if (ctx->env.limit < ctx->buffer.len + n) {
@@ -154,6 +155,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
     if (e != s) {
         buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s);
     }
+    pthread_mutex_unlock(&ctx->buffer.mutex);
 }
 
 static int
@@ -246,7 +248,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         sleep(1);
         return;
     }
-    debug_print("forward_buffer: %s", path);
+    debug_print("forward buffer: %s", path);
     while (1) {
         n = read(fd, &hdr, sizeof(hdr) - done);
         if (n <= 0) {
@@ -310,6 +312,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     close(fd);
     ctx->buffer.cursor->rb++;
+    debug_print("unlink buffer: %s, next=%u", path, ctx->buffer.cursor->rb);
     unlink(path);
 }
 
@@ -357,7 +360,9 @@ on_flush (struct ev_loop *loop, struct ev_timer *w, int revents) {
     struct timeval now, diff;
 
     ctx = (struct context *)w->data;
+    pthread_mutex_lock(&ctx->buffer.mutex);
     if (!ctx->buffer.len || ctx->buffer.cursor->rb != ctx->buffer.cursor->wb) {
+        pthread_mutex_unlock(&ctx->buffer.mutex);
         return;
     }
     gettimeofday(&now, NULL);
@@ -367,6 +372,7 @@ on_flush (struct ev_loop *loop, struct ev_timer *w, int revents) {
             // TODO
         }
     }
+    pthread_mutex_unlock(&ctx->buffer.mutex);
 }
 
 static void

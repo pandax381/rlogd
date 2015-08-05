@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/time.h>
+#include <pthread.h>
 #include "protocol.h"
 
 #define POSITION_FILE_NAME "pos.dat"
@@ -45,6 +46,7 @@ struct buffer {
     int fd;
     size_t len;
     struct timeval tstamp;
+    pthread_mutex_t mutex;
 };
 
 extern int

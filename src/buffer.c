@@ -98,6 +98,7 @@ buffer_init (struct buffer *buffer, const char *base) {
     }
     close(fd);
     buffer_resume(buffer);
+    pthread_mutex_init(&buffer->mutex, NULL);
     return 0;
 }
 
@@ -134,10 +135,16 @@ int
 buffer_flush (struct buffer *buffer) {
     char tmp[PATH_MAX], path[PATH_MAX];
 
+    if (buffer->fd == -1) {
+        warning_print("buffer has not yet been made");
+        return 0;
+    }
     snprintf(tmp, sizeof(tmp), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
     snprintf(path, sizeof(path), "%s/%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
-    debug_print("buffer_flush: %s", path);
-    rename(tmp, path);
+    debug_print("flush buffer: %s", path);
+    if (rename(tmp, path) == -1) {
+        warning_print("rename: %s -> %s", tmp, path);
+    }
     close(buffer->fd);
     buffer->cursor->wb++;
     buffer->fd = -1;
@@ -193,4 +200,5 @@ buffer_terminate (struct buffer *buffer) {
     }
     buffer->file[0] = 0x00;
     buffer->len = 0;
+    pthread_mutex_destroy(&buffer->mutex);
 }
