@@ -67,6 +67,8 @@ extern int __debug;
     __print("error", __VA_ARGS__);
 #define warning_print(...) \
     __print("warning", __VA_ARGS__);
+#define notice_print(...) \
+    __print("notice", __VA_ARGS__);
 #define debug_print(...) \
     if (__debug) \
         __print("debug", __VA_ARGS__);

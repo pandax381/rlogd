@@ -549,7 +549,7 @@ setup_modules (struct config *config) {
 static void
 signal_cb (struct ev_loop *loop, struct ev_signal *w, int revents) {
     (void)revents;
-    warning_print("Receive Signal: signum=%d", w->signum);
+    warning_print("receive signal: signum=%d", w->signum);
     ev_break(loop, EVBREAK_ALL);
 }
 
@@ -634,7 +634,7 @@ void
 config_debug (struct config *config) {
     struct dir *dir;
 
-    fprintf(stderr, "# parsed configuration file [%s]\n", config->path);
+    debug_print("parsed configuration file [%s]", config->path);
     TAILQ_FOREACH(dir, &config->dirs, lp) {
         config_dir_debug(dir, 0);
     }
@@ -732,7 +732,7 @@ config_parse (struct config *dst, const char *path) {
             name = buf + 1;
             n -= 2; /* '<' & '>'  */
             p = strpbrk(name, " \t");
-            dir->name = strtrim(strndup(name, p ? p - name : n));
+            dir->name = strtrim(strndup(name, p ? (size_t)(p - name) : n));
             if (!dir->name || !dir->name[0]) {
                 error_print("invalid string, line %zu", l);
                 free(dir->name);
@@ -789,6 +789,9 @@ config_parse (struct config *dst, const char *path) {
         }
     }
     fclose(fp);
+    if (__debug) {
+        config_debug(dst);
+    }
     return 0;
 }
 
@@ -878,11 +881,9 @@ main (int argc, char *argv[]) {
     if (option_parse(&option, argc, argv) == -1) {
         return -1;
     }
+    notice_print("starting %s", PACKAGE_STRING);
     if (config_parse(&config, option.config) == -1) {
         return -1;
-    }
-    if (option.debug) {
-        config_debug(&config);
     }
     if (init(&option) == -1) {
         config_free(&config);
@@ -908,17 +909,20 @@ main (int argc, char *argv[]) {
         return -1;
     }
     if (option.dryrun) {
-        fprintf(stderr, "Syntax OK\n");
+        notice_print("syntax ok");
         revoke_modules();
         config_free(&config);
         ev_loop_destroy(loop);
         return 0;
     }
     run_modules();
+    notice_print("running...");
     ev_run(loop, 0);
+    notice_print("shutting down...");
     ev_loop_destroy(loop);
     cancel_modules();
     config_free(&config);
     unlink(option.pid);
+    notice_print("good bye");
     return 0;
 }

@@ -92,7 +92,7 @@ buffer_init (struct buffer *buffer, const char *base) {
     buffer->size = st.st_size;
     buffer->cursor = mmap(NULL, buffer->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (buffer->cursor == MAP_FAILED) {
-        error_print("mmap: %s, file=%s, size=%lld", strerror(errno), buffer->file, buffer->size);
+        error_print("mmap: %s, file=%s, size=%zd", strerror(errno), buffer->file, buffer->size);
         close(fd);
         return -1;
     }

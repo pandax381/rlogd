@@ -22,6 +22,9 @@
 #ifndef RLOGD_BUFFER_H
 #define RLOGD_BUFFER_H
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
 #include <stdio.h>
 #include <stdint.h>
 #include <sys/time.h>

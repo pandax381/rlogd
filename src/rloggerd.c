@@ -569,6 +569,7 @@ main (int argc, char *argv[]) {
     if (parse_options(&opts, argc, argv) == -1) {
         return -1;
     }
+    notice_print("starting %s %s", APP_NAME, PACKAGE_VERSION);
     memset(&ctx, 0, sizeof(ctx));
     ctx.opts = &opts;
     if (buffer_init(&ctx.buffer, opts.buffer) == -1) {
@@ -599,11 +600,14 @@ main (int argc, char *argv[]) {
         ev_signal_init(&s->w, on_signal, s->signum);
         ev_signal_start(loop, &s->w);
     }
+    notice_print("running...");
     pthread_create(&thread, NULL, thread_main, &ctx);
     ev_run(loop, 0);
+    notice_print("shutting down...");
+    ev_loop_destroy(loop);
     pthread_join(thread, NULL);
     close(soc);
     terminate(&ctx);
-    ev_loop_destroy(loop);
+    notice_print("good bye");
     return 0;
 }
