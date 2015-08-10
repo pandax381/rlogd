@@ -47,6 +47,7 @@ int __dryrun;
 typedef struct {
     char *config;
     int debug;
+    int drain;
     int dryrun;
     int foreground;
     char *pid;
@@ -507,23 +508,25 @@ setup_label (struct dir *dir) {
     return label;
 }
 static int
-setup_modules (struct config *config) {
+setup_modules (struct config *config, int drain) {
     struct dir *dir;
     struct source *source;
     struct match *match;
     struct label *label;
 
-    TAILQ_FOREACH(dir, &config->dirs, lp) {
-        if (strcmp(dir->name, "source") == 0) {
-            if ((source = setup_source(dir)) == NULL) {
-                revoke_modules();
-                return -1;
+    if (!drain) {
+        TAILQ_FOREACH(dir, &config->dirs, lp) {
+            if (strcmp(dir->name, "source") == 0) {
+                if ((source = setup_source(dir)) == NULL) {
+                    revoke_modules();
+                    return -1;
+                }
+                TAILQ_INSERT_TAIL(&sources, source, lp);
             }
-            TAILQ_INSERT_TAIL(&sources, source, lp);
         }
-    }
-    if (TAILQ_EMPTY(&sources)) {
-        warning_print("source directive does not exist");
+        if (TAILQ_EMPTY(&sources)) {
+            warning_print("source directive does not exist");
+        }
     }
     TAILQ_FOREACH(dir, &config->dirs, lp) {
         if (strcmp(dir->name, "match") == 0) {
@@ -801,6 +804,7 @@ usage (void) {
     printf("  options:\n");
     printf("    -c, --conf=PATH  # configuration file (default: %s)\n", DEFAULT_CONFIG_FILE);
     printf("    -d, --debug      # enable debug mode\n");
+    printf("    -D, --drain      # disable input modules\n");
     printf("    -F, --foreground # foreground (not a daemon)\n");
     printf("    -p, --pid=PATH   # PID file (default: %s)\n", DEFAULT_PID_FILE);
     printf("    -t, --test       # run syntax check for config file\n");
@@ -819,6 +823,7 @@ option_parse (option_t *dst, int argc, char *argv[]) {
     const struct option long_options[] = {
         {"conf",       1, NULL, 'c'},
         {"debug",      0, NULL, 'd'},
+        {"drain",      0, NULL, 'D'},
         {"foreground", 0, NULL, 'F'},
         {"pid",        1, NULL, 'p'},
         {"test",       0, NULL, 't'},
@@ -829,18 +834,22 @@ option_parse (option_t *dst, int argc, char *argv[]) {
 
     dst->config = DEFAULT_CONFIG_FILE;
     dst->debug = 0;
+    dst->drain = 0;
     dst->dryrun = 0;
     dst->foreground = 0;
     dst->pid = DEFAULT_PID_FILE;
     dst->_stdout = NULL;
     dst->_stderr = NULL;
-    while ((o = getopt_long_only(argc, argv, "c:dFp:thv", long_options, NULL)) != -1) {
+    while ((o = getopt_long_only(argc, argv, "c:dDFp:thv", long_options, NULL)) != -1) {
         switch (o) {
         case 'c':
             dst->config = optarg;
             break;
         case 'd':
             dst->debug = 1;
+            break;
+        case 'D':
+            dst->drain = 1;
             break;
         case 'F':
             dst->foreground = 1;
@@ -900,7 +909,7 @@ main (int argc, char *argv[]) {
         ev_signal_init(&s->w, signal_cb, s->signum);
         ev_signal_start(loop, &s->w);
     }
-    if (setup_modules(&config) == -1) {
+    if (setup_modules(&config, option.drain) == -1) {
         config_free(&config);
         ev_loop_destroy(loop);
         if (!option.dryrun) {
