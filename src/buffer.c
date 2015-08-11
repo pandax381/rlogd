@@ -153,7 +153,7 @@ buffer_flush (struct buffer *buffer) {
         return 0;
     }
     snprintf(fname, sizeof(fname), "_%s.%u", BUFFER_FILE_NAME, buffer->cursor->wb);
-    debug_print("flush buffer: %s", fname + 1);
+    debug_print("flush buffer: %s/%s", buffer->base, fname + 1);
     if (renameat(buffer->dirfd, fname, buffer->dirfd, fname + 1) == -1) {
         warning_print("renameat: %s, base=%s, %s -> %s", strerror(errno), buffer->base, fname, fname + 1);
     }
