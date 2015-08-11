@@ -43,7 +43,7 @@ struct position {
 
 struct buffer {
     char *base;
-    char file[PATH_MAX];
+    int dirfd;
     struct position *cursor;
     off_t size;
     int fd;

@@ -52,51 +52,64 @@ buffer_resume (struct buffer *buffer);
 
 int
 buffer_init (struct buffer *buffer, const char *base) {
-    int fd;
+    int posfd;
     const char c = 0;
     struct stat st;
 
     buffer->fd = -1;
     buffer->len = 0;
     buffer->base = (char *)base;
-    snprintf(buffer->file, sizeof(buffer->file), "%s/%s", buffer->base, POSITION_FILE_NAME);
-    fd = open(buffer->file, O_RDWR);
-    if (fd == -1) {
+    buffer->dirfd = open(buffer->base, O_RDONLY);
+    if (buffer->dirfd == -1) {
         mkdir_p(buffer->base, NULL, DEFAULT_PERM_DIRS);
-        fd = open(buffer->file, O_RDWR | O_CREAT | O_EXCL, 00644);
-        if (fd == -1) {
-            error_print("open: %s, file=%s", strerror(errno), buffer->file);
-            return -1;
-        }
-        if (lseek(fd, sizeof(struct position) - 1, SEEK_SET) == -1) {
-            error_print("lseek: %s, file=%s", strerror(errno), buffer->file);
-            close(fd);
-            return -1;
-        }
-        if (writen(fd, &c, sizeof(c)) == -1) {
-            error_print("write: %s, file=%s", strerror(errno), buffer->file);
-            close(fd);
+        buffer->dirfd = open(buffer->base, O_RDONLY);
+        if (buffer->dirfd == -1) {
+            error_print("open: %s, path=%s", strerror(errno), buffer->base);
             return -1;
         }
     }
-    if (fstat(fd, &st) == -1) {
-        error_print("fstat: %s, file=%s", strerror(errno), buffer->file);
-        close(fd);
+    posfd = openat(buffer->dirfd, POSITION_FILE_NAME, O_RDWR);
+    if (posfd == -1) {
+        posfd = openat(buffer->dirfd, POSITION_FILE_NAME, O_RDWR | O_CREAT | O_EXCL, 00644);
+        if (posfd == -1) {
+            error_print("open: %s, file=%s/%s", strerror(errno), buffer->base, POSITION_FILE_NAME);
+            close(buffer->dirfd);
+            return -1;
+        }
+        if (lseek(posfd, sizeof(struct position) - 1, SEEK_SET) == -1) {
+            error_print("lseek: %s, file=%s/%s", strerror(errno), buffer->base, POSITION_FILE_NAME);
+            close(posfd);
+            close(buffer->dirfd);
+            return -1;
+        }
+        if (writen(posfd, &c, sizeof(c)) == -1) {
+            error_print("writen: failure, file=%s/%s", buffer->base, POSITION_FILE_NAME);
+            close(posfd);
+            close(buffer->dirfd);
+            return -1;
+        }
+    }
+    if (fstat(posfd, &st) == -1) {
+        error_print("fstat: %s, file=%s/%s", strerror(errno), buffer->base, POSITION_FILE_NAME);
+        close(posfd);
+        close(buffer->dirfd);
         return -1;
     }
     if (st.st_size != sizeof(struct position)) {
-        error_print("file size check error");
-        close(fd);
+        error_print("file size check error, file=%s/%s", buffer->base, POSITION_FILE_NAME);
+        close(posfd);
+        close(buffer->dirfd);
         return -1;
     }
     buffer->size = st.st_size;
-    buffer->cursor = mmap(NULL, buffer->size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    buffer->cursor = mmap(NULL, buffer->size, PROT_READ | PROT_WRITE, MAP_SHARED, posfd, 0);
     if (buffer->cursor == MAP_FAILED) {
-        error_print("mmap: %s, file=%s, size=%zd", strerror(errno), buffer->file, buffer->size);
-        close(fd);
+        error_print("mmap: %s, file=%s/%s, size=%zd", strerror(errno), buffer->base, POSITION_FILE_NAME, buffer->size);
+        close(posfd);
+        close(buffer->dirfd);
         return -1;
     }
-    close(fd);
+    close(posfd);
     buffer_resume(buffer);
     pthread_mutex_init(&buffer->mutex, NULL);
     return 0;
@@ -104,12 +117,12 @@ buffer_init (struct buffer *buffer, const char *base) {
 
 int
 buffer_create (struct buffer *buffer) {
-    char path[PATH_MAX];
+    char fname[NAME_MAX];
 
-    snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
-    buffer->fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    snprintf(fname, sizeof(fname), "_%s.%u", BUFFER_FILE_NAME, buffer->cursor->wb);
+    buffer->fd = openat(buffer->dirfd, fname, O_WRONLY | O_CREAT | O_EXCL, 0644);
     if (buffer->fd == -1) {
-        error_print("open: %s, path=%s", strerror(errno), path);
+        error_print("open: %s, path=%s/%s", strerror(errno), buffer->base, fname);
         return -1;
     }
     return 0;
@@ -117,11 +130,11 @@ buffer_create (struct buffer *buffer) {
 
 static void
 buffer_resume (struct buffer *buffer) {
-    char path[PATH_MAX];
+    char fname[NAME_MAX];
     struct stat st;
 
-    snprintf(path, sizeof(path), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
-    buffer->fd = open(path, O_WRONLY);
+    snprintf(fname, sizeof(fname), "_%s.%u", BUFFER_FILE_NAME, buffer->cursor->wb);
+    buffer->fd = openat(buffer->dirfd, fname, O_WRONLY);
     if (buffer->fd != -1) {
         fstat(buffer->fd, &st);
         buffer->tstamp.tv_sec = st.st_mtime;
@@ -133,17 +146,16 @@ buffer_resume (struct buffer *buffer) {
 
 int
 buffer_flush (struct buffer *buffer) {
-    char tmp[PATH_MAX], path[PATH_MAX];
+    char fname[NAME_MAX];
 
     if (buffer->fd == -1) {
         warning_print("buffer has not yet been made");
         return 0;
     }
-    snprintf(tmp, sizeof(tmp), "%s/_%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
-    snprintf(path, sizeof(path), "%s/%s.%u", buffer->base, BUFFER_FILE_NAME, buffer->cursor->wb);
-    debug_print("flush buffer: %s", path);
-    if (rename(tmp, path) == -1) {
-        warning_print("rename: %s -> %s", tmp, path);
+    snprintf(fname, sizeof(fname), "_%s.%u", BUFFER_FILE_NAME, buffer->cursor->wb);
+    debug_print("flush buffer: %s", fname + 1);
+    if (renameat(buffer->dirfd, fname, buffer->dirfd, fname + 1) == -1) {
+        warning_print("renameat: %s, base=%s, %s -> %s", strerror(errno), buffer->base, fname, fname + 1);
     }
     close(buffer->fd);
     buffer->cursor->wb++;
@@ -187,6 +199,9 @@ buffer_write (struct buffer *buffer, const char *tag, size_t tag_len, struct ent
 
 void
 buffer_terminate (struct buffer *buffer) {
+    if (buffer->dirfd != -1) {
+        close(buffer->dirfd);
+    }
     if (buffer->fd != -1) {
         close(buffer->fd );
         buffer->fd = -1;
@@ -198,7 +213,6 @@ buffer_terminate (struct buffer *buffer) {
         buffer->cursor = NULL;
         buffer->size = 0;
     }
-    buffer->file[0] = 0x00;
     buffer->len = 0;
     pthread_mutex_destroy(&buffer->mutex);
 }
