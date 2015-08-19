@@ -124,7 +124,7 @@ void
 push_entries (struct module *module, const char *tag, size_t tag_len, struct entry *entries, size_t len) {
     struct source *source;
     char buf[1024];
-    size_t n = 0;
+    size_t plen, slen, n = 0;
     struct label *label;
     struct match *match;
 
@@ -132,31 +132,37 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
     if (!source) {
         return;
     }
-    if (source->prefix) {
-        strcpy(buf, source->prefix);
-        n += strlen(source->prefix);
+    plen = source->prefix ? strlen(source->prefix) : 0;
+    slen = source->suffix ? strlen(source->suffix) : 0;
+    if ((plen ? plen + 1 : 0) + tag_len + (slen ? slen + 1 : 0) >= sizeof(buf)) {
+        warning_print("tag too long");
+        return;
+    }
+    if (plen) {
+        strncpy(buf, source->prefix, plen);
+        n += plen;
         buf[n++] = '.';
     }
     strncpy(buf + n, tag, tag_len);
     n += tag_len;
-    if (source->suffix) {
+    if (slen) {
         buf[n++] = '.';
-        strcpy(buf + n, source->suffix);
-    } else {
-        buf[n] = '\0';
+        strncpy(buf + n, source->suffix, slen);
+        n += slen;
     }
+    buf[n] = '\0';
     if (source->label) {
         TAILQ_FOREACH(label, &labels, lp) {
             if (pcre_exec(label->reg, NULL, source->label, strlen(source->label), 0, 0, 0, 0) >= 0) {
                 TAILQ_FOREACH(match, &label->matches, lp) {
-                    if (pcre_exec(match->reg, NULL, buf, strlen(buf), 0, 0, 0, 0) >= 0) {
+                    if (pcre_exec(match->reg, NULL, buf, n, 0, 0, 0, 0) >= 0) {
                         pthread_mutex_lock(&match->mutex);
                         match->ctx.emit(match->ctx.arg, buf, n, entries, len);
                         pthread_mutex_unlock(&match->mutex);
                         return;
                     }
                 }
-                warning_print("'%.*s' is not match", (int)tag_len, tag);
+                warning_print("'%s' is not match", buf);
                 return;
             }
         }
@@ -164,14 +170,14 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
         return;
     }
     TAILQ_FOREACH(match, &matches, lp) {
-        if (pcre_exec(match->reg, NULL, buf, strlen(buf), 0, 0, 0, 0) >= 0) {
+        if (pcre_exec(match->reg, NULL, buf, n, 0, 0, 0, 0) >= 0) {
             pthread_mutex_lock(&match->mutex);
             match->ctx.emit(match->ctx.arg, buf, n, entries, len);
             pthread_mutex_unlock(&match->mutex);
             return;
         }
     }
-    warning_print("'%.*s' is not match", (int)tag_len, tag);
+    warning_print("'%s' is not match", buf);
 }
 
 void
