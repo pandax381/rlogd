@@ -59,6 +59,8 @@ struct opts {
     char *listen;
     char *target;
     char *user;
+    char *prefix;
+    char *suffix;
     int mode;
 };
 
@@ -84,19 +86,55 @@ struct e_context {
     LIST_ENTRY(e_context) lp;
 };
 
+ssize_t
+maketag (char *buf, size_t size, const char *tag, size_t tag_len, const char *prefix, const char *suffix) {
+    ssize_t n = 0, plen, slen;
+
+    plen = prefix ? strlen(prefix) : 0;
+    slen = suffix ? strlen(suffix) : 0;
+    if ((plen ? plen + 1 : 0) + tag_len + (slen ? slen + 1 : 0) > size) {
+        return -1;
+    }
+    if (plen) {
+        strncpy(buf, prefix, plen);
+        n += plen;
+        buf[n++] = '.';
+    }
+    strncpy(buf + n, tag, tag_len);
+    n += tag_len;
+    if (slen) {
+        buf[n++] = '.';
+        strncpy(buf + n, suffix, slen);
+        n += slen;
+    }
+    return n;
+}
+
 static void
 on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
-    char *tag;
-    size_t tag_len;
+    char *tag, buf[1024];
+    size_t offset, tag_len;
+    ssize_t buf_len;
     struct entry *s, *e;
     size_t n;
 
+    offset = ntohs(hdr->off);
     tag = (char *)(hdr + 1);
-    tag_len = ntohs(hdr->off) - sizeof(struct hdr);
+    tag_len = offset - sizeof(struct hdr);
     s = e = (struct entry *)(tag + tag_len);
+    if (ctx->parent->opts->prefix || ctx->parent->opts->suffix) {
+        buf_len = maketag(buf, sizeof(buf), tag, tag_len, ctx->parent->opts->prefix, ctx->parent->opts->suffix);
+        if (buf_len == -1) {
+            warning_print("tag too long");
+            pthread_mutex_unlock(&ctx->parent->buffer.mutex);
+            return;
+        }
+        tag = buf;
+        tag_len = (size_t)buf_len;
+    }
     pthread_mutex_lock(&ctx->parent->buffer.mutex);
     while ((caddr_t)e < (caddr_t)hdr + len) {
-        n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
+        n = offset + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
         if ((size_t)ctx->parent->opts->chunk < ctx->parent->buffer.len + n) {
             if (e != s) {
                 buffer_write(&ctx->parent->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s);
@@ -107,9 +145,9 @@ on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
                     // TODO
                 }
             }
-            n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
+            n = offset + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
             if ((size_t)ctx->parent->opts->chunk < ctx->parent->buffer.len + n) {
-                warning_print("warning: entry too long");
+                warning_print("entry too long");
                 s = e;
             }
         }
@@ -440,16 +478,18 @@ static void
 usage (void) {
     printf("usage: %s [options]\n", APP_NAME);
     printf("  options:\n");
-    printf("    -d, --debug         # debug mode\n");
-    printf("    -l, --listen=ADDR   # listen address (default: %s)\n", DEFAULT_LISTEN_ADDR);
-    printf("    -t, --target=TARGET # target address (default: %s)\n", DEFAULT_TARGET_ADDR);
-    printf("    -u, --user=USER     # socket file owner\n");
-    printf("    -m, --mode=MODE     # socket file permission (default: %o)\n", DEFAULT_SOCKET_MODE);
-    printf("    -b, --buffer=PATH   # file buffer directory path (default: %s)\n", DEFAULT_BUFFER);
-    printf("    -c, --chunk=SIZE    # maximum length of the chunk (default: %d)\n", DEFAULT_CHUNK);
-    printf("    -f, --flush=TIME    # time to flush the chunk (default: %d)\n", DEFAULT_FLUSH);
-    printf("        --help          # show this message\n");
-    printf("        --version       # show version\n");
+    printf("    -d, --debug          # debug mode\n");
+    printf("    -l, --listen=ADDR    # listen address (default: %s)\n", DEFAULT_LISTEN_ADDR);
+    printf("    -t, --target=TARGET  # target address (default: %s)\n", DEFAULT_TARGET_ADDR);
+    printf("    -u, --user=USER      # socket file owner\n");
+    printf("    -m, --mode=MODE      # socket file permission (default: %o)\n", DEFAULT_SOCKET_MODE);
+    printf("    -b, --buffer=PATH    # file buffer directory path (default: %s)\n", DEFAULT_BUFFER);
+    printf("    -c, --chunk=SIZE     # maximum length of the chunk (default: %d)\n", DEFAULT_CHUNK);
+    printf("    -f, --flush=TIME     # time to flush the chunk (default: %d)\n", DEFAULT_FLUSH);
+    printf("        --add-prefix=TAG # add prefix to tag\n");
+    printf("        --add-suffix=TAG # add suffix to tag\n");
+    printf("        --help           # show this message\n");
+    printf("        --version        # show version\n");
 }
 
 static void
@@ -461,17 +501,19 @@ static int
 parse_options (struct opts *opts, int argc, char *argv[]) {
     int opt;
     struct option long_options[] = {
-        {"debug",   0, NULL, 'd'},
-        {"listen",  1, NULL, 'l'},
-        {"target",  1, NULL, 't'},
-        {"user",    1, NULL, 'u'},
-        {"mode",    1, NULL, 'm'},
-        {"buffer",  1, NULL, 'b'},
-        {"chunk",   1, NULL, 'c'},
-        {"flush",   1, NULL, 'f'},
-        {"help",    0, NULL,  2 },
-        {"version", 0, NULL,  1 },
-        { NULL,     0, NULL,  0 }
+        {"debug",      0, NULL, 'd'},
+        {"listen",     1, NULL, 'l'},
+        {"target",     1, NULL, 't'},
+        {"user",       1, NULL, 'u'},
+        {"mode",       1, NULL, 'm'},
+        {"buffer",     1, NULL, 'b'},
+        {"chunk",      1, NULL, 'c'},
+        {"flush",      1, NULL, 'f'},
+        {"add-prefix", 1, NULL,  4 },
+        {"add-suffix", 1, NULL,  3 },
+        {"help",       0, NULL,  2 },
+        {"version",    0, NULL,  1 },
+        { NULL,        0, NULL,  0 }
     };
 
     memset(opts, 0, sizeof(struct opts));
@@ -482,6 +524,8 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
     opts->buffer = DEFAULT_BUFFER;
     opts->chunk = DEFAULT_CHUNK;
     opts->flush = DEFAULT_FLUSH;
+    opts->prefix = NULL;
+    opts->suffix = NULL;
     while ((opt = getopt_long_only(argc, argv, "dl:u:m:t:b:c:f:", long_options, NULL)) != -1) {
         switch (opt) {
         case 'd':
@@ -519,6 +563,12 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
                 usage();
                 return -1;
             }
+            break;
+        case 4:
+            opts->prefix = optarg;
+            break;
+        case 3:
+            opts->suffix = optarg;
             break;
         case 2:
             usage();
