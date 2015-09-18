@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.61])
-AC_INIT([rlogd], [0.4.3], [https://github.com/pandax381/rlogd/issues/])
+AC_INIT([rlogd], [0.4.4], [https://github.com/pandax381/rlogd/issues/])
 AM_INIT_AUTOMAKE(foreign)
 AC_CONFIG_SRCDIR([src/rlogd.c])
 AC_CONFIG_HEADERS([config.h])
