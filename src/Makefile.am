@@ -3,8 +3,11 @@ CFLAGS += -W -Wall -Wno-unused-parameter -fno-strict-aliasing
 
 bin_PROGRAMS = rlogger rloggerd
 sbin_PROGRAMS = rlogd
+noinst_LIBRARIES = librlog.a
+ 
+noinst_HEADERS = buffer.h common.h protocol.h rlogd.h librlog.h
 
-noinst_HEADERS = buffer.h common.h protocol.h rlogd.h
+librlog_a_SOURCES = librlog.c common.c
 
 rlogger_SOURCES = rlogger.c common.c
 rlogger_CFLAGS = $(EV_CPPFLAGS)
