@@ -190,5 +190,13 @@ unescape (char *str, size_t len);
 extern void *
 memrchr (const void *s, int c, size_t n);
 #endif
+#ifndef HAVE_OPENAT
+extern int
+openat (int dirfd, const char *file, int flags, ...);
+#endif
+#ifndef HAVE_RENAMEAT
+extern int
+renameat (int olddirfd, const char *oldfile, int newdirfd, const char *newfile);
+#endif
 
 #endif

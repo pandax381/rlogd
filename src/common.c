@@ -24,6 +24,7 @@
 #endif
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
@@ -629,5 +630,52 @@ memrchr (const void *s, int c, size_t n) {
         }
     }
     return NULL;
+}
+#endif
+
+#ifndef HAVE_OPENAT
+int
+openat (int dirfd, const char *file, int flags, ...) {
+    va_list arg;
+    mode_t mode = 0;
+    char dir[PATH_MAX], path[PATH_MAX];
+
+    if (flags & O_CREAT) {
+        va_start(arg, flags);
+        mode = va_arg(arg, mode_t);
+        va_end(arg);
+    }
+    if (dirfd != AT_FDCWD && *file != '/') {
+        if (fcntl(dirfd, F_GETPATH, dir) == -1) {
+            return -1;
+        }
+        snprintf(path, sizeof(path), "%s/%s", dir, file);
+        file = path;
+    }
+    return open(file, flags, mode);
+}
+#endif
+
+#ifndef HAVE_RENAMEAT
+int
+renameat (int olddirfd, const char *oldfile, int newdirfd, const char *newfile) {
+    char olddir[PATH_MAX], oldpath[PATH_MAX];
+    char newdir[PATH_MAX], newpath[PATH_MAX];
+
+    if (olddirfd != AT_FDCWD && *oldfile != '/') {
+        if (fcntl(olddirfd, F_GETPATH, olddir) == -1) {
+            return -1;
+        }
+        snprintf(oldpath, sizeof(oldpath), "%s/%s", olddir, oldfile);
+        oldfile = oldpath;
+    }
+    if (newdirfd != AT_FDCWD && *newfile != '/') {
+        if (fcntl(newdirfd, F_GETPATH, newdir) == -1) {
+            return -1;
+        }
+        snprintf(newpath, sizeof(newpath), "%s/%s", newdir, newfile);
+        newfile = newpath;
+    }
+    return rename(oldfile, newfile);
 }
 #endif
