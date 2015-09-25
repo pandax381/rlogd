@@ -86,11 +86,17 @@ format (char *dst, size_t size, const char *fmt, const struct kv *table) {
         sp = strchr(ep, '$');
         if (!sp) {
             ncopy = len - (ep - fmt);
+            if ((dp - dst) + ncopy >= size) {
+                return -1;
+            }
             memcpy(dp, ep, ncopy);
             dp += ncopy;
             break;
         }
         ncopy = sp - ep;
+        if ((dp - dst) + ncopy >= size) {
+            return -1;
+        }
         memcpy(dp, ep, ncopy);
         dp += ncopy;
         for (ep = sp + 1; *ep; ep++) {
@@ -103,6 +109,9 @@ format (char *dst, size_t size, const char *fmt, const struct kv *table) {
         for (kv = (struct kv *)table; kv && kv->k; kv++) {
             if (klen == kv->klen && memcmp(k, kv->k, klen) == 0) {
                 ncopy = kv->vlen;
+                if ((dp - dst) + ncopy >= size) {
+                    return -1;
+                }
                 memcpy(dp, kv->v, ncopy);
                 dp += ncopy;
             }
@@ -206,7 +215,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
         table[3].vlen = ntohl(entry->len);
         n = format(buf, sizeof(buf), ctx->env.format, table);
         if (n == -1) {
-            warning_print("entry message too long");
+            warning_print("entry message too long, entry->len=%zu", table[3].vlen);
             return;
         }
         buf[n++] = '\n';
