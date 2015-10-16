@@ -633,6 +633,10 @@ memrchr (const void *s, int c, size_t n) {
 }
 #endif
 
+#ifndef AT_FDCWD
+#define AT_FDCWD -2
+#endif
+
 #ifndef HAVE_OPENAT
 int
 openat (int dirfd, const char *file, int flags, ...) {
