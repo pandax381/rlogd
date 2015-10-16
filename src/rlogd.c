@@ -78,6 +78,7 @@ struct source {
 struct match {
     struct module ctx;
     pcre *reg;
+    int continuous;
     pthread_t thread;
     pthread_mutex_t mutex;
     TAILQ_ENTRY(match) lp;
@@ -127,6 +128,7 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
     size_t plen, slen, n = 0;
     struct label *label;
     struct match *match;
+    int matched = 0;
 
     source = container_of(module, struct source, ctx);
     if (!source) {
@@ -159,10 +161,15 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
                         pthread_mutex_lock(&match->mutex);
                         match->ctx.emit(match->ctx.arg, buf, n, entries, len);
                         pthread_mutex_unlock(&match->mutex);
-                        return;
+                        if (!match->continuous) {
+                            return;
+                        }
+                        ++matched;
                     }
                 }
-                warning_print("'%s' is not match", buf);
+                if (!matched) {
+                    warning_print("'%s' is not match", buf);
+                }
                 return;
             }
         }
@@ -174,10 +181,15 @@ push_entries (struct module *module, const char *tag, size_t tag_len, struct ent
             pthread_mutex_lock(&match->mutex);
             match->ctx.emit(match->ctx.arg, buf, n, entries, len);
             pthread_mutex_unlock(&match->mutex);
-            return;
+            if (!match->continuous) {
+                return;
+            }
+            ++matched;
         }
     }
-    warning_print("'%s' is not match", buf);
+    if (!matched) {
+        warning_print("'%s' is not match", buf);
+    }
 }
 
 void
@@ -422,7 +434,7 @@ convert_regex_pattern (char *dst, size_t size, const char *src, size_t len) {
 
 static struct match *
 setup_match (struct dir *dir) {
-    char *type, pattern[1024];
+    char *type, *val, pattern[1024];
     struct module_def *module;
     struct match *match;
     const char *errmsg;
@@ -447,6 +459,8 @@ setup_match (struct dir *dir) {
         error_print("malloc error");
         return NULL;
     }
+    val = config_dir_get_param_value(dir, "continue");
+    match->continuous = (val && strcmp(val, "true")) ? 1 : 0;
     memset(&match->reg, 0, sizeof(match->reg));
     convert_regex_pattern(pattern, sizeof(pattern), dir->arg, strlen(dir->arg));
     match->reg = pcre_compile(pattern, 0, &errmsg, &erroff, NULL);
