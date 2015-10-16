@@ -460,7 +460,7 @@ setup_match (struct dir *dir) {
         return NULL;
     }
     val = config_dir_get_param_value(dir, "continue");
-    match->continuous = (val && strcmp(val, "true")) ? 1 : 0;
+    match->continuous = (val && strcmp(val, "true") == 0) ? 1 : 0;
     memset(&match->reg, 0, sizeof(match->reg));
     convert_regex_pattern(pattern, sizeof(pattern), dir->arg, strlen(dir->arg));
     match->reg = pcre_compile(pattern, 0, &errmsg, &erroff, NULL);
