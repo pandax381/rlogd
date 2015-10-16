@@ -6,9 +6,25 @@ addons:
    - libev-dev
    - libpcre3-dev
 
+os:
+  - linux
+  - osx
+
 compiler:
   - gcc
   - clang
+
+matrix:
+  exclude:
+    - os: osx
+      compiler: gcc
+  allow_failures:
+    - os: osx
+      compiler: clang
+
+before_install:
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install libev ; fi
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install pcre ; fi
 
 script:
   - ./autogen.sh
