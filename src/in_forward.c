@@ -259,6 +259,7 @@ in_forward_setup (struct module *module, struct dir *dir) {
     ctx->module = module;
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
     ctx->env.mode  = DEFAULT_SOCKET_MODE;
+    ctx->env.user = NULL;
     if (parse_params(&ctx->env, dir) == -1) {
         free(ctx);
         return -1;
