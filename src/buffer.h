@@ -34,6 +34,10 @@
 #define POSITION_FILE_NAME "pos.dat"
 #define BUFFER_FILE_NAME "buffer"
 
+/*
+   r/w: read/write
+   b/c: buffer/chunk
+*/
 struct position {
     uint32_t rb;
     uint32_t rc;

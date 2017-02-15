@@ -45,7 +45,7 @@
 
 #define APP_NAME "rloggerd"
 
-#define DEFAULT_BUFFER (LOCALSTATEDIR "/spool/rlogd/rloggerd/")
+#define DEFAULT_BUFFER (LOCALSTATEDIR "/spool/rlogd/rloggerd")
 #define DEFAULT_CHUNK DEFAULT_BUFFER_CHUNK_LIMIT
 #define DEFAULT_FLUSH DEFAULT_FLUSH_INTERVAL
 #define DEFAULT_LISTEN_ADDR DEFAULT_RLOGGERD_SOCKET
@@ -338,6 +338,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     int fd, skip = 0;
     struct hdr hdr;
     ssize_t n, done = 0, len;
+    uint32_t seq;
 
     ctx = (struct context *)w->data;
     if (ctx->terminate) {
@@ -369,8 +370,10 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         if (done < (ssize_t)sizeof(hdr)) {
             continue;
         }
-        if (ntohl(hdr.seq) < ctx->buffer.cursor->rc) {
+        seq = ntohl(hdr.seq);
+        if (seq < ctx->buffer.cursor->rc) {
             skip = 1;
+            debug_print("skip: %s, seq=%u, cursor->rc=%u", path, seq, ctx->buffer.cursor->rc);
         } else {
             writen(w->fd, &hdr, sizeof(hdr));
         }
@@ -404,7 +407,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             done = 0;
             continue;
         }
-        if (wait_ack(ctx, ntohl(hdr.seq)) == -1) {
+        if (wait_ack(ctx, seq) == -1) {
             close(fd);
             ev_io_stop(loop, w);
             close(w->fd);
@@ -413,7 +416,7 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             ev_timer_start(loop, &ctx->connect.retry_w);
             return;
         }
-        ctx->buffer.cursor->rc = ntohl(hdr.seq);
+        ctx->buffer.cursor->rc = seq;
         done = 0;
     }
     close(fd);

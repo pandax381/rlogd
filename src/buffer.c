@@ -112,6 +112,8 @@ buffer_init (struct buffer *buffer, const char *base) {
     close(posfd);
     buffer_resume(buffer);
     pthread_mutex_init(&buffer->mutex, NULL);
+    notice_print("position: %s/%s, read=%u/%u, write=%u/%u", buffer->base, POSITION_FILE_NAME,
+        buffer->cursor->rb, buffer->cursor->rc, buffer->cursor->wb, buffer->cursor->wc);
     return 0;
 }
 
