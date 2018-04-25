@@ -136,7 +136,9 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
         n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
         if (ctx->env.limit < ctx->buffer.len + n) {
             if (e != s) {
-                buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s);
+                while (buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s) == -1) {
+                    sleep(1);
+                }
                 s = e;
             }
             if (ctx->buffer.len) {
@@ -153,7 +155,9 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
         }
     }
     if (e != s) {
-        buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s);
+        while (buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s) == -1) {
+            sleep(1);
+        }
     }
     pthread_mutex_unlock(&ctx->buffer.mutex);
 }
