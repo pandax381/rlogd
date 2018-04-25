@@ -137,6 +137,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
         if (ctx->env.limit < ctx->buffer.len + n) {
             if (e != s) {
                 while (buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s) == -1) {
+                    warning_print("buffer_write: error, retry after 1 seconds...");
                     sleep(1);
                 }
                 s = e;
@@ -156,6 +157,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
     }
     if (e != s) {
         while (buffer_write(&ctx->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s) == -1) {
+            warning_print("buffer_write: error, retry after 1 seconds...");
             sleep(1);
         }
     }

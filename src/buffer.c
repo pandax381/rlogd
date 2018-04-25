@@ -195,6 +195,7 @@ buffer_write (struct buffer *buffer, const char *tag, size_t tag_len, struct ent
     iov[2].iov_len  = len;
     cur = lseek(buffer->fd, 0, SEEK_CUR);
     if (writevn(buffer->fd, iov, 3) == -1) {
+        warning_print("writevn: error, rewind file offset [%lld] to [%lld]", lseek(buffer->fd, 0, SEEK_CUR), cur);
         ftruncate(buffer->fd, cur);
         lseek(buffer->fd, cur, SEEK_SET);
         return -1;
