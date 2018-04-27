@@ -151,7 +151,7 @@ emit (void *arg, const char *tag, size_t tag_len, const struct entry *entries, s
             n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
             if (ctx->env.limit < ctx->buffer.len + n) {
                 warning_print("entry too long");
-                s = e;
+                s = NEXT_ENTRY(e);
             }
         }
     }
