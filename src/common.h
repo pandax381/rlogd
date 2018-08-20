@@ -171,6 +171,8 @@ setup_unix_server_socket (const char *path, int backlog, int nonblock);
 extern int
 setup_tcp_server_socket (const char *host, const char *port, int backlog, int nonblock);
 extern ssize_t
+readn (int fd, void *buf, size_t n);
+extern ssize_t
 writen (int fd, const void *buf, size_t n);
 extern size_t
 iovlen (const struct iovec *iov, size_t n);

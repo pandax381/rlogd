@@ -387,6 +387,27 @@ setup_tcp_server_socket (const char *host, const char *port, int backlog, int no
 }
 
 ssize_t
+readn (int fd, void *buf, size_t n) {
+    size_t done = 0;
+    ssize_t ret;
+
+    while (done < n) {
+        ret = read(fd, (caddr_t)buf + done, n - done);
+        if (ret == -1) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return -1;
+        }
+        if (!ret) {
+            break;
+        }
+        done += ret;
+    }
+    return (ssize_t)done;
+}
+
+ssize_t
 writen (int fd, const void *buf, size_t n) {
     size_t done = 0;
     ssize_t ret;
