@@ -238,9 +238,9 @@ static void
 on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     struct context *ctx;
     char path[PATH_MAX];
-    int fd, skip = 0;
+    int fd;
     struct hdr hdr;
-    ssize_t n, done = 0, len;
+    ssize_t n;
     uint32_t seq;
 
     ctx = (struct context *)w->data;
@@ -257,56 +257,34 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     debug_print("forward buffer: %s", path);
     while (1) {
-        n = read(fd, &hdr, sizeof(hdr) - done);
-        if (n <= 0) {
+        n = readn(fd, &hdr, sizeof(hdr));
+        if (n != sizeof(hdr)) {
             if (n) {
-                if (errno == EINTR) {
-                    continue;
+                if (n == -1) {
+                    error_print("read: %s, fd=%d", strerror(errno), fd);
+                } else {
+                    warning_print("read: less than sizeof(struct hdr), fd=%d, n=%zd", fd, n);
                 }
-                error_print("read: %s, fd=%d", strerror(errno), fd);
                 close(fd);
                 return;
             }
             break;
         }
-        done += n;
-        if (done < (ssize_t)sizeof(hdr)) {
-            continue;
-        }
         seq = ntohl(hdr.seq);
         if (seq < ctx->buffer.cursor->rc) {
-            skip = 1;
             debug_print("skip: %s, seq=%u, cursor->rc=%u", path, seq, ctx->buffer.cursor->rc);
-        } else {
-            writen(w->fd, &hdr, sizeof(hdr));
-        }
-        done = 0;
-        len = ntohl(hdr.len) - sizeof(hdr);
-        while (done < len) {
-            n = _sendfile(skip ? -1 : w->fd, fd, len - done);
-            if (n == -1) {
-                close(fd);
-                ev_io_stop(loop, w);
-                close(w->fd);
-                w->fd = -1;
-                ev_timer_start(loop, &ctx->connect.retry_w);
-                return;
-            }
-            if (n != (len - done)) {
-                error_print("incomplete sendfile, %zd / %zd", n, len - done);
-                close(fd);
-                ev_io_stop(loop, w);
-                close(w->fd);
-                w->fd = -1;
-                ev_timer_start(loop, &ctx->connect.retry_w);
-                return;
-            }
-            done += n;
-        }
-        if (skip) {
-            skip = 0;
-            done = 0;
+            _sendfile(-1, fd, ntohl(hdr.len) - sizeof(hdr));
             continue;
+        }
+        writen(w->fd, &hdr, sizeof(hdr));
+        n = _sendfile(w->fd, fd, ntohl(hdr.len) - sizeof(hdr));
+        if (n == -1) {
+            close(fd);
+            ev_io_stop(loop, w);
+            close(w->fd);
+            w->fd = -1;
+            ev_timer_start(loop, &ctx->connect.retry_w);
+            return;
         }
         if (wait_ack(ctx, seq) == -1) {
             close(fd);
@@ -317,7 +295,6 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             return;
         }
         ctx->buffer.cursor->rc = seq;
-        done = 0;
     }
     close(fd);
     ctx->buffer.cursor->rb++;
