@@ -171,6 +171,7 @@ buffer_write (struct buffer *buffer, const char *tag, size_t tag_len, struct ent
     size_t off;
     struct hdr hdr;
     struct iovec iov[3];
+    off_t cur;
 
     if (buffer->fd == -1) {
         if (buffer_create(buffer) == -1) {
@@ -184,7 +185,7 @@ buffer_write (struct buffer *buffer, const char *tag, size_t tag_len, struct ent
     hdr.ver  = HDR_VERSION;
     hdr.type = HDR_TYPE_PSH | HDR_NEED_ACK;
     hdr.off  = htons(off);
-    hdr.seq  = htonl(buffer->cursor->wc++);
+    hdr.seq  = htonl(buffer->cursor->wc + 1);
     hdr.len  = htonl(off + len);
     iov[0].iov_base = (void *)&hdr;
     iov[0].iov_len  = sizeof(hdr);
@@ -192,10 +193,15 @@ buffer_write (struct buffer *buffer, const char *tag, size_t tag_len, struct ent
     iov[1].iov_len  = tag_len;
     iov[2].iov_base = (void *)entries;
     iov[2].iov_len  = len;
+    cur = lseek(buffer->fd, 0, SEEK_CUR);
     if (writevn(buffer->fd, iov, 3) == -1) {
+        warning_print("writevn: error, rewind file offset [%lld] to [%lld]", lseek(buffer->fd, 0, SEEK_CUR), cur);
+        ftruncate(buffer->fd, cur);
+        lseek(buffer->fd, cur, SEEK_SET);
         return -1;
     }
     buffer->len += (off + len);
+    buffer->cursor->wc++;
     return 0;
 }
 
