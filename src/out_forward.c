@@ -208,11 +208,16 @@ wait_ack (struct context *ctx, uint32_t seq) {
     return 0;
 }
 
-static ssize_t
-_sendfile (int out_fd, int in_fd, size_t count) {
+static int
+send_chunk (struct hdr *hdr, int out_fd, int in_fd) {
     char buf[65536];
     ssize_t n, done = 0;
+    size_t count;
 
+    if (out_fd != -1) {
+        writen(out_fd, hdr, sizeof(*hdr));
+    }
+    count = ntohl(hdr->len) - sizeof(*hdr);
     while (done < (ssize_t)count) {
         n = read(in_fd, buf, MIN(sizeof(buf), (count - done)));
         if (n <= 0) {
@@ -231,7 +236,7 @@ _sendfile (int out_fd, int in_fd, size_t count) {
         }
         done += n;
     }
-    return done;
+    return 0;
 }
 
 static void
@@ -273,11 +278,10 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
         seq = ntohl(hdr.seq);
         if (seq < ctx->buffer.cursor->rc) {
             debug_print("skip: %s, seq=%u, cursor->rc=%u", path, seq, ctx->buffer.cursor->rc);
-            _sendfile(-1, fd, ntohl(hdr.len) - sizeof(hdr));
+            send_chunk(&hdr, -1, fd);
             continue;
         }
-        writen(w->fd, &hdr, sizeof(hdr));
-        n = _sendfile(w->fd, fd, ntohl(hdr.len) - sizeof(hdr));
+        n = send_chunk(&hdr, w->fd, fd);
         if (n == -1) {
             close(fd);
             ev_io_stop(loop, w);
