@@ -260,9 +260,9 @@ send_chunk_fluentd_compatible (struct hdr *hdr, int out_fd, int in_fd) {
         }
         entry = (struct entry *)buf;
         remain += n;
-        while (remain > sizeof(struct entry)) {
+        while (remain >= sizeof(struct entry)) {
             size_t len = ntohl(entry->len);
-            if (remain < len) {
+            if (remain < sizeof(struct entry) + len) {
                 break;
             }
             // record
