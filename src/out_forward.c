@@ -225,7 +225,7 @@ static int
 send_chunk_fluentd_compatible (struct hdr *hdr, int out_fd, int in_fd) {
     size_t offset, tag_len, size, remain = 0, count = 0;
     ssize_t n, done = 0;
-    char buf[65536], tag[1024], seq[5];
+    char buf[8+65536], tag[1024], seq[5];
     struct entry *entry;
     msgpack_packer packer;
     msgpack_sbuffer head, body;
