@@ -213,7 +213,8 @@ on_accept (struct ev_loop *loop, struct ev_io *w, int revents) {
 static int
 parse_params (struct env *env, struct dir *dir) {
     struct param *param;
-    char *p;
+    char *p, *endptr;
+    long int val;
 
     TAILQ_FOREACH(param, &dir->params, lp) {
         if (strcmp(param->key, "type") == 0 || strcmp(param->key, "label") == 0 ) {
@@ -235,6 +236,13 @@ parse_params (struct env *env, struct dir *dir) {
                 error_print("value of 'mode' is invalid, line %zu", param->line);
                 return -1;
             }
+        } else if (strcmp(param->key, "limit") == 0) {
+            val = strtol(param->value, &endptr, 10);
+            if (val < 0 || *endptr != '\0') {
+                error_print("value of 'limit' is invalid, line %zu", param->line);
+                return -1;
+            }
+            env->limit = val;
         } else {
             warning_print("unknown parameter, line %zu", param->line);
         }
