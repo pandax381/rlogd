@@ -113,14 +113,13 @@ maketag (char *buf, size_t size, const char *tag, size_t tag_len, const char *pr
 static void
 on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
     char *tag, buf[1024];
-    size_t offset, tag_len;
+    size_t tag_len;
     ssize_t buf_len;
     struct entry *s, *e;
     size_t n;
 
-    offset = ntohs(hdr->off);
     tag = (char *)(hdr + 1);
-    tag_len = offset - sizeof(struct hdr);
+    tag_len = ntohs(hdr->off) - sizeof(struct hdr);
     s = e = (struct entry *)(tag + tag_len);
     if (ctx->parent->opts->prefix || ctx->parent->opts->suffix) {
         buf_len = maketag(buf, sizeof(buf), tag, tag_len, ctx->parent->opts->prefix, ctx->parent->opts->suffix);
@@ -134,7 +133,7 @@ on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
     }
     pthread_mutex_lock(&ctx->parent->buffer.mutex);
     while ((caddr_t)e < (caddr_t)hdr + len) {
-        n = offset + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
+        n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
         if ((size_t)ctx->parent->opts->chunk < ctx->parent->buffer.len + n) {
             if (e != s) {
                 buffer_write(&ctx->parent->buffer, tag, tag_len, s, (caddr_t)e - (caddr_t)s);
@@ -145,7 +144,7 @@ on_message (struct e_context *ctx, struct hdr *hdr, size_t len) {
                     // TODO
                 }
             }
-            n = offset + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
+            n = sizeof(struct hdr) + tag_len + (((caddr_t)(e + 1) + ntohl(e->len)) - (caddr_t)s);
             if ((size_t)ctx->parent->opts->chunk < ctx->parent->buffer.len + n) {
                 warning_print("entry too long");
                 s = e;
