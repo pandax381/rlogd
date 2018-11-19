@@ -54,6 +54,7 @@ struct env {
     size_t limit;
     size_t interval;
     int fluentd_compatible;
+    int convert_ltsv;
 };
 
 struct context {
@@ -222,13 +223,23 @@ wait_ack (struct context *ctx, uint32_t seq) {
 }
 
 static int
-send_chunk_fluentd_compatible (struct hdr *hdr, int out_fd, int in_fd) {
+send_chunk_fluentd_compatible (struct context *ctx, struct hdr *hdr, int out_fd, int in_fd) {
     size_t offset, tag_len, size, remain = 0, count = 0;
     ssize_t n, done = 0;
     char buf[8+65536], tag[1024], seq[5];
     struct entry *entry;
     msgpack_packer packer;
     msgpack_sbuffer head, body;
+
+    struct ltsv_element {
+        uint8_t* col;
+        uint8_t* val;
+        int clen;
+        int vlen;
+    };
+    struct ltsv_element* ltsv;
+    int i, nltsv;
+    int is_ltsv = 1;
 
     offset = ntohs(hdr->off);
     tag_len = offset - sizeof(*hdr);
@@ -268,11 +279,70 @@ send_chunk_fluentd_compatible (struct hdr *hdr, int out_fd, int in_fd) {
             // record
             msgpack_pack_array(&packer, 2);
             msgpack_pack_uint32(&packer, ntohl(entry->timestamp));
-            msgpack_pack_map(&packer, 1);
-            msgpack_pack_str(&packer, 7);
-            msgpack_pack_str_body(&packer, "message", 7);
-            msgpack_pack_str(&packer, len);
-            msgpack_pack_str_body(&packer, entry->data, len);
+
+            if (ctx->env.convert_ltsv)
+            {
+                int ltsv_size = 256;
+                uint8_t* p;
+                uint8_t* q;
+
+                ltsv = (struct ltsv_element*)malloc(sizeof(struct ltsv_element)*ltsv_size);
+                if (ltsv == NULL) {
+                    is_ltsv = 0;
+                    p = entry->data + len;
+                }
+                for (i = 0, p = entry->data; (size_t)(p - entry->data) < len; i++, p = q + 1) {
+                    uint8_t* col;
+                    uint8_t* val;
+                    int clen = 0;
+                    int vlen = 0;
+                    col = p;
+                    q = (uint8_t*)strchr((char*)col, ':');
+                    if (q == NULL) {
+                        is_ltsv = 0;
+                        free(ltsv);
+                        break;
+                    }
+                    clen = q - col;
+                    val = q + 1;
+                    q = (uint8_t*)strchr((char*)val, '\t');
+                    if (q == NULL) {
+                        q = entry->data + len;
+                    }
+                    vlen = q - val;
+                    ltsv[i].col = col;
+                    ltsv[i].val = val;
+                    ltsv[i].clen = clen;
+                    ltsv[i].vlen = vlen;
+                    if (i == ltsv_size - 1) {
+                        ltsv_size += 256;
+                        struct ltsv_element* x = (struct ltsv_element*)realloc(ltsv, sizeof(struct ltsv_element)*ltsv_size);
+                        if (x == NULL) {
+                            is_ltsv = 0;
+                            free(ltsv);
+                            break;
+                        }
+                        ltsv = x;
+                    }
+                }
+                nltsv = i;
+            }
+            if (ctx->env.convert_ltsv && is_ltsv) {
+                msgpack_pack_map(&packer, nltsv);
+                for (i = 0; i < nltsv; i++) {
+                    msgpack_pack_str(&packer, ltsv[i].clen);
+                    msgpack_pack_str_body(&packer, ltsv[i].col, ltsv[i].clen);
+                    msgpack_pack_str(&packer, ltsv[i].vlen);
+                    msgpack_pack_str_body(&packer, ltsv[i].val, ltsv[i].vlen);
+                }
+                free(ltsv);
+            } else {
+                msgpack_pack_map(&packer, 1);
+                msgpack_pack_str(&packer, 7);
+                msgpack_pack_str_body(&packer, "message", 7);
+                msgpack_pack_str(&packer, len);
+                msgpack_pack_str_body(&packer, entry->data, len);
+            }
             count++;
             entry = (struct entry *)((caddr_t)(entry + 1) + len);
             remain -= sizeof(struct entry) + len;
@@ -312,7 +382,7 @@ send_chunk (struct context *ctx, struct hdr *hdr, int out_fd, int in_fd) {
 
     if (out_fd != -1) {
         if (ctx->env.fluentd_compatible) {
-            return send_chunk_fluentd_compatible(hdr, out_fd, in_fd);
+            return send_chunk_fluentd_compatible(ctx, hdr, out_fd, in_fd);
         }
         writen(out_fd, hdr, sizeof(*hdr));
     }
@@ -514,6 +584,13 @@ parse_options (struct env *env, struct dir *dir) {
                 error_print("value of 'fluentd_compatible' is invalid, line %zu", param->line);
                 return -1;
             }
+        } else if (strcmp(param->key, "convert_ltsv") == 0) {
+            if (strcmp(param->value, "true") == 0) {
+                env->convert_ltsv = 1;
+            } else {
+                error_print("value of 'convert_ltsv' is invalid, line %zu", param->line);
+                return -1;
+            }
         } else {
             warning_print("unknown parameter, line %zu", param->line);
         }
@@ -544,6 +621,7 @@ out_forward_setup (struct module *module, struct dir *dir) {
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
     ctx->env.interval = DEFAULT_FLUSH_INTERVAL;
     ctx->env.fluentd_compatible = 0;
+    ctx->env.convert_ltsv = 0;
     if (parse_options(&ctx->env, dir) == -1) {
         free(ctx);
         return -1;
