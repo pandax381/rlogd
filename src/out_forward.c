@@ -284,39 +284,39 @@ send_chunk_fluentd_compatible (struct context *ctx, struct hdr *hdr, int out_fd,
             {
                 int ltsv_size = 256;
                 uint8_t* p;
-                uint8_t* sentry = entry->data + len;
+                uint8_t* sentinel = entry->data + len;
 
                 ltsv = (struct ltsv_element*)malloc(sizeof(struct ltsv_element)*ltsv_size);
                 if (ltsv == NULL) {
                     error_print("malloc error");
                     return -1;
                 }
-                for (i = 0, p = entry->data; p < sentry; p++) {
+                for (i = 0, p = entry->data; p < sentinel; p++) {
                     uint8_t* col_pos;
                     uint8_t* val_pos;
                     int col_len = 0;
                     int val_len = 0;
                     col_pos = p;
-                    while (p < sentry) {
+                    while (p < sentinel) {
                         if (*p == ':') {
                             break;
                         }
                         p++;
                     }
-                    if (p >= sentry) {
+                    if (p >= sentinel) {
                         is_ltsv = 0;
                         free(ltsv);
                         break;
                     }
                     col_len = p - col_pos;
                     p++; // skip ':'
-                    if (p >= sentry) {
+                    if (p >= sentinel) {
                         is_ltsv = 0;
                         free(ltsv);
                         break;
                     }
                     val_pos = p;
-                    while (p < sentry) {
+                    while (p < sentinel) {
                         if (*p == '\t') {
                             break;
                         }
