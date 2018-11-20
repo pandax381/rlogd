@@ -238,7 +238,7 @@ send_chunk_fluentd_compatible (struct context *ctx, struct hdr *hdr, int out_fd,
         int vlen;
     };
     struct ltsv_element* ltsv;
-    int i, nltsv;
+    int i, ncols;
     int is_ltsv = 1;
 
     offset = ntohs(hdr->off);
@@ -284,52 +284,66 @@ send_chunk_fluentd_compatible (struct context *ctx, struct hdr *hdr, int out_fd,
             {
                 int ltsv_size = 256;
                 uint8_t* p;
-                uint8_t* q;
+                uint8_t* sentry = entry->data + len;
 
                 ltsv = (struct ltsv_element*)malloc(sizeof(struct ltsv_element)*ltsv_size);
                 if (ltsv == NULL) {
-                    is_ltsv = 0;
-                    p = entry->data + len;
+                    error_print("malloc error");
+                    return -1;
                 }
-                for (i = 0, p = entry->data; (size_t)(p - entry->data) < len; i++, p = q + 1) {
-                    uint8_t* col;
-                    uint8_t* val;
-                    int clen = 0;
-                    int vlen = 0;
-                    col = p;
-                    q = (uint8_t*)strchr((char*)col, ':');
-                    if (q == NULL) {
+                for (i = 0, p = entry->data; p < sentry; p++) {
+                    uint8_t* col_pos;
+                    uint8_t* val_pos;
+                    int col_len = 0;
+                    int val_len = 0;
+                    col_pos = p;
+                    while (p < sentry) {
+                        if (*p == ':') {
+                            break;
+                        }
+                        p++;
+                    }
+                    if (p >= sentry) {
                         is_ltsv = 0;
                         free(ltsv);
                         break;
                     }
-                    clen = q - col;
-                    val = q + 1;
-                    q = (uint8_t*)strchr((char*)val, '\t');
-                    if (q == NULL) {
-                        q = entry->data + len;
+                    col_len = p - col_pos;
+                    p++; // skip ':'
+                    if (p >= sentry) {
+                        is_ltsv = 0;
+                        free(ltsv);
+                        break;
                     }
-                    vlen = q - val;
-                    ltsv[i].col = col;
-                    ltsv[i].val = val;
-                    ltsv[i].clen = clen;
-                    ltsv[i].vlen = vlen;
-                    if (i == ltsv_size - 1) {
+                    val_pos = p;
+                    while (p < sentry) {
+                        if (*p == '\t') {
+                            break;
+                        }
+                        p++;
+                    }
+                    // p points '\t' or end of entyr->data
+                    val_len = p - val_pos;
+                    ltsv[i].col = col_pos;
+                    ltsv[i].val = val_pos;
+                    ltsv[i].clen = col_len;
+                    ltsv[i].vlen = val_len;
+                    i++;
+                    if (i == ltsv_size) {
                         ltsv_size += 256;
                         struct ltsv_element* x = (struct ltsv_element*)realloc(ltsv, sizeof(struct ltsv_element)*ltsv_size);
                         if (x == NULL) {
-                            is_ltsv = 0;
-                            free(ltsv);
-                            break;
+                            error_print("malloc error");
+                            return -1;
                         }
                         ltsv = x;
                     }
                 }
-                nltsv = i;
+                ncols = i;
             }
             if (ctx->env.convert_ltsv && is_ltsv) {
-                msgpack_pack_map(&packer, nltsv);
-                for (i = 0; i < nltsv; i++) {
+                msgpack_pack_map(&packer, ncols);
+                for (i = 0; i < ncols; i++) {
                     msgpack_pack_str(&packer, ltsv[i].clen);
                     msgpack_pack_str_body(&packer, ltsv[i].col, ltsv[i].clen);
                     msgpack_pack_str(&packer, ltsv[i].vlen);
