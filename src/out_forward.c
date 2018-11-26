@@ -334,6 +334,7 @@ send_chunk_fluentd_compatible (struct context *ctx, struct hdr *hdr, int out_fd,
                         struct ltsv_element* x = (struct ltsv_element*)realloc(ltsv, sizeof(struct ltsv_element)*ltsv_size);
                         if (x == NULL) {
                             error_print("malloc error");
+                            free(ltsv);
                             return -1;
                         }
                         ltsv = x;
