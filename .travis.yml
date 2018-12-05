@@ -5,6 +5,7 @@ addons:
   packages:
    - libev-dev
    - libpcre3-dev
+   - libmsgpack-dev
 
 os:
   - linux
@@ -25,6 +26,7 @@ matrix:
 before_install:
   - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install libev ; fi
   - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install pcre ; fi
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install msgpack ; fi
 
 script:
   - ./autogen.sh

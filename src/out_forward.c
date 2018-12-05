@@ -43,6 +43,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <ev.h>
+#include <msgpack.h>
 #include "rlogd.h"
 #include "buffer.h"
 #include "common.h"
@@ -52,6 +53,8 @@ struct env {
     char *buffer;
     size_t limit;
     size_t interval;
+    int fluentd_compatible;
+    int follow_ltsv;
 };
 
 struct context {
@@ -168,10 +171,12 @@ static int
 wait_ack (struct context *ctx, uint32_t seq) {
     int ret;
     struct pollfd pfd;
-    struct hdr ack;
-    size_t done = 0;
+    char buf[16];
+    struct hdr *ack;
+    size_t size, done = 0;
     ssize_t n;
 
+    size = ctx->env.fluentd_compatible ? 10 : sizeof(*ack);
     pfd.fd = ctx->connect.w.fd;
     pfd.events = POLLIN;
     while (1) {
@@ -182,7 +187,7 @@ wait_ack (struct context *ctx, uint32_t seq) {
             error_print("poll: %s", strerror(errno));
             return -1;
         }
-        n = recv(pfd.fd, (char *)&ack + done, sizeof(ack) - done, 0);
+        n = recv(pfd.fd, buf + done, size - done, 0);
         switch (n) {
         case -1:
             if (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN) {
@@ -198,21 +203,195 @@ wait_ack (struct context *ctx, uint32_t seq) {
             return -1;
         }
         done += n;
-        if (done < sizeof(ack)) {
+        if (done < size) {
             continue;
         }
-        if (ntohl(ack.seq) == seq) {
-            break;
+        if (ctx->env.fluentd_compatible) {
+            /* TODO */
+            buf[10] = '\0';
+            if (strtol(buf + 6, NULL, 16) == seq) {
+              break;
+            }
+        } else {
+            ack = (struct hdr *)buf;
+            if (ntohl(ack->seq) == seq) {
+                break;
+            }
         }
     }
     return 0;
 }
 
-static ssize_t
-_sendfile (int out_fd, int in_fd, size_t count) {
+struct strvec {
+    uint8_t *base;
+    size_t len;
+};
+
+struct ltsv {
+    struct strvec col;
+    struct strvec val;
+};
+
+#define LTSV_ALLOC_SIZE (256)
+
+static int
+parse_ltsv (struct entry *entry, struct ltsv **dst) {
+    struct ltsv *ltsv = NULL, *_ltsv;
+    int capacity = 0, n = 0;
+    uint8_t *p, *sentinel;
+
+    sentinel = entry->data + ntohl(entry->len);
+    for (p = entry->data; p < sentinel; p++) {
+        struct strvec col = {};
+        struct strvec val = {};
+
+        col.base = p;
+        p = memchr(p, ':', sentinel - p);
+        if (!p || (p + 1) == sentinel) {
+            free(ltsv);
+            return 0;
+        }
+        col.len = p - col.base;
+        val.base = ++p;
+        p = memchr(p, '\t', sentinel - p);
+        if (!p) {
+            p = sentinel;
+        }
+        // p points '\t' or end of entyr->data
+        val.len = p - val.base;
+        if (n == capacity) {
+            capacity += LTSV_ALLOC_SIZE;
+            _ltsv = (struct ltsv *)realloc(ltsv, sizeof(struct ltsv) * capacity);
+            if (!_ltsv) {
+                error_print("malloc error");
+                free(ltsv);
+                return -1;
+            }
+            ltsv = _ltsv;
+        }
+        ltsv[n].col = col;
+        ltsv[n].val = val;
+        n++;
+    }
+    *dst = ltsv;
+    return n;
+}
+
+static int
+send_chunk_fluentd_compatible (struct context *ctx, struct hdr *hdr, int out_fd, int in_fd) {
+    size_t offset, tag_len, size, remain = 0, count = 0;
+    ssize_t n, done = 0;
+    char buf[8+65536], tag[1024], seq[5];
+    struct entry *entry;
+    msgpack_packer packer;
+    msgpack_sbuffer head, body;
+    struct ltsv *ltsv;
+    int ncols, i;
+
+    offset = ntohs(hdr->off);
+    tag_len = offset - sizeof(*hdr);
+    n = readn(in_fd, tag, tag_len);
+    if (n != (ssize_t)tag_len) {
+        if (n == -1) {
+            error_print("readn: %s, %d", strerror(errno), in_fd);
+        } else {
+            warning_print("readn: less than tag_len=%zd, fd=%d, n=%zd", tag_len, in_fd, n);
+        }
+        return -1;
+    }
+    size = ntohl(hdr->len) - offset;
+    msgpack_sbuffer_init(&body);
+    msgpack_packer_init(&packer, &body, msgpack_sbuffer_write);
+    while (done < (ssize_t)size) {
+        n = read(in_fd, buf + remain, MIN(sizeof(buf) - remain, (size - done)));
+        if (n <= 0) {
+            if (n) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                // TODO
+                error_print("read: %s, %d", strerror(errno), in_fd);
+                msgpack_sbuffer_destroy(&body);
+                return -1;
+            }
+            break;
+        }
+        entry = (struct entry *)buf;
+        remain += n;
+        while (remain >= sizeof(struct entry)) {
+            size_t len = ntohl(entry->len);
+            if (remain < sizeof(struct entry) + len) {
+                break;
+            }
+            // record
+            msgpack_pack_array(&packer, 2);
+            msgpack_pack_uint32(&packer, ntohl(entry->timestamp));
+            if (ctx->env.follow_ltsv) {
+                ncols = parse_ltsv(entry, &ltsv);
+                if (ncols == -1) {
+                    return -1;
+                }
+            }
+            if (ctx->env.follow_ltsv && ncols) {
+                msgpack_pack_map(&packer, ncols);
+                for (i = 0; i < ncols; i++) {
+                    msgpack_pack_str(&packer, ltsv[i].col.len);
+                    msgpack_pack_str_body(&packer, ltsv[i].col.base, ltsv[i].col.len);
+                    msgpack_pack_str(&packer, ltsv[i].val.len);
+                    msgpack_pack_str_body(&packer, ltsv[i].val.base, ltsv[i].val.len);
+                }
+                free(ltsv);
+            } else {
+                msgpack_pack_map(&packer, 1);
+                msgpack_pack_str(&packer, 7);
+                msgpack_pack_str_body(&packer, "message", 7);
+                msgpack_pack_str(&packer, len);
+                msgpack_pack_str_body(&packer, entry->data, len);
+            }
+            count++;
+            entry = (struct entry *)((caddr_t)(entry + 1) + len);
+            remain -= sizeof(struct entry) + len;
+        }
+        if ((caddr_t)entry != buf) {
+            memmove(buf, entry, remain);
+        }
+        done += n;
+    }
+    debug_print("count: %zd", count);
+    // option
+    msgpack_pack_map(&packer, 1);
+    msgpack_pack_str(&packer, 5);
+    msgpack_pack_str_body(&packer, "chunk", 5);
+    msgpack_pack_str(&packer, 4);
+    sprintf(seq, "%04x", ntohl(hdr->seq));
+    msgpack_pack_str_body(&packer, seq, 4);
+    // header
+    msgpack_sbuffer_init(&head);
+    msgpack_packer_init(&packer, &head, msgpack_sbuffer_write);
+    msgpack_pack_array(&packer, 3);
+    msgpack_pack_str(&packer, tag_len);
+    msgpack_pack_str_body(&packer, tag, tag_len);
+    msgpack_pack_array(&packer, count);
+    writen(out_fd, head.data, head.size);
+    msgpack_sbuffer_destroy(&head);
+    writen(out_fd, body.data, body.size);
+    msgpack_sbuffer_destroy(&body);
+    return 0;
+}
+
+static int
+send_chunk (struct context *ctx, struct hdr *hdr, int out_fd, int in_fd) {
     char buf[65536];
     ssize_t n, done = 0;
+    size_t count;
 
+    if (out_fd != -1) {
+        if (ctx->env.fluentd_compatible) {
+            return send_chunk_fluentd_compatible(ctx, hdr, out_fd, in_fd);
+        }
+        writen(out_fd, hdr, sizeof(*hdr));
+    }
+    count = ntohl(hdr->len) - sizeof(*hdr);
     while (done < (ssize_t)count) {
         n = read(in_fd, buf, MIN(sizeof(buf), (count - done)));
         if (n <= 0) {
@@ -231,16 +410,16 @@ _sendfile (int out_fd, int in_fd, size_t count) {
         }
         done += n;
     }
-    return done;
+    return 0;
 }
 
 static void
 on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     struct context *ctx;
     char path[PATH_MAX];
-    int fd, skip = 0;
+    int fd, err;
     struct hdr hdr;
-    ssize_t n, done = 0, len;
+    ssize_t n;
     uint32_t seq;
 
     ctx = (struct context *)w->data;
@@ -257,56 +436,33 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
     }
     debug_print("forward buffer: %s", path);
     while (1) {
-        n = read(fd, &hdr, sizeof(hdr) - done);
-        if (n <= 0) {
+        n = readn(fd, &hdr, sizeof(hdr));
+        if (n != sizeof(hdr)) {
             if (n) {
-                if (errno == EINTR) {
-                    continue;
+                if (n == -1) {
+                    error_print("read: %s, fd=%d", strerror(errno), fd);
+                } else {
+                    warning_print("read: less than sizeof(struct hdr), fd=%d, n=%zd", fd, n);
                 }
-                error_print("read: %s, fd=%d", strerror(errno), fd);
                 close(fd);
                 return;
             }
             break;
         }
-        done += n;
-        if (done < (ssize_t)sizeof(hdr)) {
-            continue;
-        }
         seq = ntohl(hdr.seq);
         if (seq < ctx->buffer.cursor->rc) {
-            skip = 1;
             debug_print("skip: %s, seq=%u, cursor->rc=%u", path, seq, ctx->buffer.cursor->rc);
-        } else {
-            writen(w->fd, &hdr, sizeof(hdr));
-        }
-        done = 0;
-        len = ntohl(hdr.len) - sizeof(hdr);
-        while (done < len) {
-            n = _sendfile(skip ? -1 : w->fd, fd, len - done);
-            if (n == -1) {
-                close(fd);
-                ev_io_stop(loop, w);
-                close(w->fd);
-                w->fd = -1;
-                ev_timer_start(loop, &ctx->connect.retry_w);
-                return;
-            }
-            if (n != (len - done)) {
-                error_print("incomplete sendfile, %zd / %zd", n, len - done);
-                close(fd);
-                ev_io_stop(loop, w);
-                close(w->fd);
-                w->fd = -1;
-                ev_timer_start(loop, &ctx->connect.retry_w);
-                return;
-            }
-            done += n;
-        }
-        if (skip) {
-            skip = 0;
-            done = 0;
+            send_chunk(ctx, &hdr, -1, fd);
             continue;
+        }
+        err = send_chunk(ctx, &hdr, w->fd, fd);
+        if (err) {
+            close(fd);
+            ev_io_stop(loop, w);
+            close(w->fd);
+            w->fd = -1;
+            ev_timer_start(loop, &ctx->connect.retry_w);
+            return;
         }
         if (wait_ack(ctx, seq) == -1) {
             close(fd);
@@ -317,7 +473,6 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             return;
         }
         ctx->buffer.cursor->rc = seq;
-        done = 0;
     }
     close(fd);
     ctx->buffer.cursor->rb++;
@@ -427,6 +582,20 @@ parse_options (struct env *env, struct dir *dir) {
                 return -1;
             }
             env->interval = val;
+        } else if (strcmp(param->key, "fluentd_compatible") == 0) {
+            if (strcmp(param->value, "true") == 0) {
+                env->fluentd_compatible = 1;
+            } else {
+                error_print("value of 'fluentd_compatible' is invalid, line %zu", param->line);
+                return -1;
+            }
+        } else if (strcmp(param->key, "follow_ltsv") == 0) {
+            if (strcmp(param->value, "true") == 0) {
+                env->follow_ltsv = 1;
+            } else {
+                error_print("value of 'follow_ltsv' is invalid, line %zu", param->line);
+                return -1;
+            }
         } else {
             warning_print("unknown parameter, line %zu", param->line);
         }
@@ -456,6 +625,8 @@ out_forward_setup (struct module *module, struct dir *dir) {
     ctx->module = module;
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
     ctx->env.interval = DEFAULT_FLUSH_INTERVAL;
+    ctx->env.fluentd_compatible = 0;
+    ctx->env.follow_ltsv = 0;
     if (parse_options(&ctx->env, dir) == -1) {
         free(ctx);
         return -1;

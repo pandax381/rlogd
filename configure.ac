@@ -69,5 +69,22 @@ AC_SUBST(PCRE_LDFLAGS)
 AC_SUBST(PCRE_CPPFLAGS)
 AC_SUBST(PCRE_LIBS)
 
+# Checks for libmsgpackc
+AC_ARG_WITH([libmsgpackc],[AC_HELP_STRING([--with-libmsgpackc=DIR],[location of the libmsgpackc installed directory])],[MSGPACKC_PATH="$withval"],[])
+if test "$MSGPACKC_PATH"; then
+    MSGPACKC_LDFLAGS="-L${MSGPACKC_PATH}/lib -Wl,-rpath,${MSGPACKC_PATH}/lib"
+    MSGPACKC_CPPFLAGS="-I${MSGPACKC_PATH}/include"
+fi
+AX_CHECK_LIBRARY([MSGPACKC],[msgpack.h],[msgpackc],[],[AC_MSG_ERROR([libmsgpackc not found])])
+AC_ARG_ENABLE([libmsgpackc-static],[AC_HELP_STRING([--enable-libmsgpackc-static],[libmsgpackc static link])],[MSGPACKC_STATIC="yes"],[])
+if test "$MSGPACKC_STATIC" = "yes"; then
+    MSGPACKC_LIBS="${MSGPACKC_PATH}/lib/libmsgpackc.a"
+else
+    MSGPACKC_LIBS="-lmsgpackc"
+fi
+AC_SUBST(MSGPACKC_LDFLAGS)
+AC_SUBST(MSGPACKC_CPPFLAGS)
+AC_SUBST(MSGPACKC_LIBS)
+
 AC_CONFIG_FILES([Makefile src/Makefile])
 AC_OUTPUT
