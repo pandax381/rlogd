@@ -1,11 +1,15 @@
 language: c
 
+dist: xenial
+
 addons:
- apt:
-  packages:
-   - libev-dev
-   - libpcre3-dev
-   - libmsgpack-dev
+  apt:
+    sources:
+      - sourceline: 'ppa:neovim-ppa/stable'
+    packages:
+      - libev-dev
+      - libpcre3-dev
+      - libmsgpack-dev
 
 os:
   - linux
