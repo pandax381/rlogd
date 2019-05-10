@@ -28,9 +28,9 @@ matrix:
       compiler: clang
 
 before_install:
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install libev ; fi
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install pcre ; fi
-  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install msgpack ; fi
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install libev || true ; fi
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install pcre || true ; fi
+  - if test "$TRAVIS_OS_NAME" = "osx" ; then brew install msgpack || true ; fi
 
 script:
   - ./autogen.sh
