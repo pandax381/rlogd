@@ -450,6 +450,9 @@ on_write (struct ev_loop *loop, struct ev_io *w, int revents) {
             break;
         }
         seq = ntohl(hdr.seq);
+        if (!seq && ctx->buffer.cursor->rc == UINT32_MAX) {
+            ctx->buffer.cursor->rc = 0;
+        }
         if (seq < ctx->buffer.cursor->rc) {
             debug_print("skip: %s, seq=%u, cursor->rc=%u", path, seq, ctx->buffer.cursor->rc);
             send_chunk(ctx, &hdr, -1, fd);
