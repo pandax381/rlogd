@@ -35,16 +35,19 @@ Note: This program has been tested with Linux (kernel 3.2.0) and Mac OSX (10.9.5
 
     usage: rloggerd [options]
       options:
-        -d, --debug         # debug mode
-        -l, --listen=ADDR   # listen address (default: unix:///var/run/rlogd/rloggerd.sock)
-        -t, --target=TARGET # target address (default: unix:///var/run/rlogd/rlogd.sock)
-        -u, --user=USER     # socket file owner
-        -m, --mode=MODE     # socket file permission (default: 666)
-        -b, --buffer=PATH   # file buffer directory path (default: /var/run/rlogd/rloggerd.buf)
-        -c, --chunk=SIZE    # maximum length of the chunk (default: 8388608)
-        -f, --flush=TIME    # time to flush the chunk (default: 5)
-            --help          # show this message
-            --version       # show version
+        -d, --debug          # debug mode
+        -l, --listen=ADDR    # listen address (default: unix:///var/run/rlogd/rloggerd.sock)
+        -t, --target=TARGET  # target address (default: unix:///var/run/rlogd/rlogd.sock)
+        -u, --user=USER      # socket file owner
+        -m, --mode=MODE      # socket file permission (default: 666)
+        -b, --buffer=PATH    # file buffer directory path (default: /var/run/rlogd/rloggerd.buf)
+        -c, --chunk=SIZE     # maximum length of the chunk (default: 8388608)
+        -f, --flush=TIME     # time to flush the chunk (default: 5)
+            --timeout=TIME   # time to wait for ACK (default: 30)
+            --add-prefix=TAG # add prefix to tag
+            --add-suffix=TAG # add suffix to tag
+            --help           # show this message
+            --version        # show version
 
 ### rlogger
 
