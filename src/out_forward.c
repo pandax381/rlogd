@@ -53,6 +53,7 @@ struct env {
     char *buffer;
     size_t limit;
     size_t interval;
+    size_t timeout;
     int fluentd_compatible;
     int follow_ltsv;
 };
@@ -175,13 +176,21 @@ wait_ack (struct context *ctx, uint32_t seq) {
     struct hdr *ack;
     size_t size, done = 0;
     ssize_t n;
+    struct timeval base, now, diff;
 
     size = ctx->env.fluentd_compatible ? 10 : sizeof(*ack);
     pfd.fd = ctx->connect.w.fd;
     pfd.events = POLLIN;
+    gettimeofday(&base, NULL);
     while (1) {
         if ((ret = poll(&pfd, 1, 1000)) <= 0) {
             if (ret == 0 || errno == EINTR) {
+                gettimeofday(&now, NULL);
+                tvsub(&now, &base, &diff);
+                if (diff.tv_sec >= (time_t)ctx->env.timeout) {
+                    error_print("timeout: no response");
+                    return -1;
+                }
                 continue;
             }
             error_print("poll: %s", strerror(errno));
@@ -585,6 +594,13 @@ parse_options (struct env *env, struct dir *dir) {
                 return -1;
             }
             env->interval = val;
+        } else if (strcmp(param->key, "ack_timeout") == 0) {
+            val = strtol(param->value, &endptr, 10);
+            if (val < 0 || *endptr) {
+                error_print("value of 'ack_timeout' is invalid, line %zu", param->line);
+                return -1;
+            }
+            env->timeout = val;
         } else if (strcmp(param->key, "fluentd_compatible") == 0) {
             if (strcmp(param->value, "true") == 0) {
                 env->fluentd_compatible = 1;
@@ -628,6 +644,7 @@ out_forward_setup (struct module *module, struct dir *dir) {
     ctx->module = module;
     ctx->env.limit = DEFAULT_BUFFER_CHUNK_LIMIT;
     ctx->env.interval = DEFAULT_FLUSH_INTERVAL;
+    ctx->env.timeout = DEFAULT_ACK_TIMEOUT;
     ctx->env.fluentd_compatible = 0;
     ctx->env.follow_ltsv = 0;
     if (parse_options(&ctx->env, dir) == -1) {

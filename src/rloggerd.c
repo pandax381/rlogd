@@ -48,6 +48,7 @@
 #define DEFAULT_BUFFER (LOCALSTATEDIR "/spool/rlogd/rloggerd")
 #define DEFAULT_CHUNK DEFAULT_BUFFER_CHUNK_LIMIT
 #define DEFAULT_FLUSH DEFAULT_FLUSH_INTERVAL
+#define DEFAULT_TIMEOUT DEFAULT_ACK_TIMEOUT
 #define DEFAULT_LISTEN_ADDR DEFAULT_RLOGGERD_SOCKET
 #define DEFAULT_TARGET_ADDR DEFAULT_RLOGD_SOCKET
 
@@ -56,6 +57,7 @@ struct opts {
     char *buffer;
     int chunk;
     int flush;
+    int timeout;
     char *listen;
     char *target;
     char *user;
@@ -267,12 +269,20 @@ wait_ack (struct context *ctx, uint32_t seq) {
     struct hdr ack;
     size_t done = 0;
     ssize_t n;
+    struct timeval base, now, diff;
 
     pfd.fd = ctx->connect.w.fd;
     pfd.events = POLLIN;
+    gettimeofday(&base, NULL);
     while (1) {
         if ((ret = poll(&pfd, 1, 1000)) <= 0) {
             if (ret == 0 || errno == EINTR) {
+                gettimeofday(&now, NULL);
+                tvsub(&now, &base, &diff);
+                if (diff.tv_sec >= (time_t)ctx->opts->timeout) {
+                    error_print("timeout: no response");
+                    return -1;
+                }
                 continue;
             }
             error_print("poll: %s", strerror(errno));
@@ -491,6 +501,7 @@ usage (void) {
     printf("    -b, --buffer=PATH    # file buffer directory path (default: %s)\n", DEFAULT_BUFFER);
     printf("    -c, --chunk=SIZE     # maximum length of the chunk (default: %d)\n", DEFAULT_CHUNK);
     printf("    -f, --flush=TIME     # time to flush the chunk (default: %d)\n", DEFAULT_FLUSH);
+    printf("        --timeout=TIME   # time to wait for ACK (default: %d)\n", DEFAULT_TIMEOUT);
     printf("        --add-prefix=TAG # add prefix to tag\n");
     printf("        --add-suffix=TAG # add suffix to tag\n");
     printf("        --help           # show this message\n");
@@ -514,6 +525,7 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
         {"buffer",     1, NULL, 'b'},
         {"chunk",      1, NULL, 'c'},
         {"flush",      1, NULL, 'f'},
+        {"timeout",    1, NULL,  5 },
         {"add-prefix", 1, NULL,  4 },
         {"add-suffix", 1, NULL,  3 },
         {"help",       0, NULL,  2 },
@@ -529,6 +541,7 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
     opts->buffer = DEFAULT_BUFFER;
     opts->chunk = DEFAULT_CHUNK;
     opts->flush = DEFAULT_FLUSH;
+    opts->timeout = DEFAULT_TIMEOUT;
     opts->prefix = NULL;
     opts->suffix = NULL;
     while ((opt = getopt_long_only(argc, argv, "dl:u:m:t:b:c:f:", long_options, NULL)) != -1) {
@@ -565,6 +578,13 @@ parse_options (struct opts *opts, int argc, char *argv[]) {
         case 'f':
             opts->flush = strtol(optarg, NULL, 10);
             if (opts->flush == -1) {
+                usage();
+                return -1;
+            }
+            break;
+        case 5:
+            opts->timeout = strtol(optarg, NULL, 10);
+            if (opts->timeout == -1) {
                 usage();
                 return -1;
             }
